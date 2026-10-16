@@ -44,8 +44,8 @@ export function NovoProdutoForm() {
         setProgress({ done: i, total: files.length, step: "Reduzindo foto" });
         try {
           smalls.push(await compressImage(file));
-        } catch {
-          skipped.push(file.name);
+        } catch (err) {
+          skipped.push(err instanceof Error ? err.message : file.name);
         }
       }
       if (!smalls.length) throw new Error("Nenhuma das fotos pôde ser aberta. Use JPG, PNG, WebP ou HEIC.");
@@ -92,7 +92,7 @@ export function NovoProdutoForm() {
       if (skipped.length) {
         setProgress(null);
         setFiles([]);
-        setNotice(`Produto salvo. Ignoradas por não abrirem: ${skipped.join(", ")}.`);
+        setNotice(`Produto salvo. Não consegui abrir: ${skipped.join("; ")}.`);
         return;
       }
       router.push("/produtos");
