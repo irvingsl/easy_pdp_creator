@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { btnPrimary, inputBase } from "@/components/ui";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,7 +28,8 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-4 p-6">
-      <h1 className="text-2xl font-semibold">Entrar</h1>
+      <h1 className="text-2xl font-semibold">Easy PDP Creator</h1>
+      <p className="text-gray-500">Entre para continuar.</p>
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <input
           type="email"
@@ -36,7 +38,7 @@ export default function LoginPage() {
           placeholder="seu@email.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="rounded border border-gray-300 bg-transparent p-3"
+          className={inputBase}
         />
         <input
           type="password"
@@ -45,11 +47,11 @@ export default function LoginPage() {
           placeholder="Senha"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="rounded border border-gray-300 bg-transparent p-3"
+          className={inputBase}
         />
         <button
           disabled={busy}
-          className="rounded bg-gray-900 p-3 text-white disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900"
+          className={btnPrimary}
         >
           {busy ? "Entrando..." : "Entrar"}
         </button>

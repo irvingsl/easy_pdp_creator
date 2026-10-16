@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
 import { browserRemover } from "@/lib/images/remove-background";
 import { composeOnWhite } from "@/lib/images/whiten";
 import { BUCKET_ORIGINAIS, BUCKET_PROCESSADAS } from "@/domain/types";
+import { btnPrimary, btnSecondary, inputBase } from "./ui";
 
 type Progress = { done: number; total: number; step: string };
 
@@ -16,6 +17,13 @@ export function NovoProdutoForm() {
   const [oem, setOem] = useState("");
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState("");
+
+  const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+  useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
+
+  function addFiles(list: FileList | null) {
+    if (list?.length) setFiles((prev) => [...prev, ...Array.from(list)]);
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -51,9 +59,9 @@ export function NovoProdutoForm() {
         if (fErr) throw fErr;
 
         try {
-          step("Removendo fundo (1ª vez baixa o modelo)");
+          step("Removendo fundo (a 1ª vez baixa o modelo)");
           const cutout = await browserRemover.remove(small);
-          step("Fundo branco");
+          step("Aplicando fundo branco");
           const white = await composeOnWhite(cutout);
           const pathProcessada = `${base}.jpg`;
           const up2 = await supabase.storage.from(BUCKET_PROCESSADAS).upload(pathProcessada, white, { contentType: "image/jpeg" });
@@ -76,32 +84,72 @@ export function NovoProdutoForm() {
 
   const busy = progress !== null;
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex flex-col gap-6">
+      <section className="flex flex-col gap-3">
+        <h2 className="font-medium">Fotos da peça</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <label className={`${btnSecondary} ${busy ? "pointer-events-none opacity-50" : ""}`}>
+            📷 Tirar foto
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              onChange={(e) => {
+                addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <label className={`${btnSecondary} ${busy ? "pointer-events-none opacity-50" : ""}`}>
+            🖼️ Escolher da galeria
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="sr-only"
+              onChange={(e) => {
+                addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+        <p className="text-sm text-gray-500">Dica: inclua o número gravado na peça, se tiver.</p>
+
+        {previews.length > 0 && (
+          <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {previews.map((src, i) => (
+              <li key={src} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt={`Foto ${i + 1}`} className="aspect-square w-full rounded-lg object-cover" />
+                {!busy && (
+                  <button
+                    type="button"
+                    aria-label={`Remover foto ${i + 1}`}
+                    onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                    className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white"
+                  >
+                    ×
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <label className="flex flex-col gap-1">
-        <span className="text-sm">Fotos (câmera ou galeria)</span>
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          disabled={busy}
-          onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-        />
-        <span className="text-xs text-gray-500">Dica: inclua o número gravado na peça, se tiver.</span>
+        <span className="font-medium">Código OEM / fabricante <span className="font-normal text-gray-500">(opcional)</span></span>
+        <input value={oem} onChange={(e) => setOem(e.target.value)} disabled={busy} className={inputBase} />
       </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-sm">Código OEM / fabricante (opcional)</span>
-        <input
-          value={oem}
-          onChange={(e) => setOem(e.target.value)}
-          disabled={busy}
-          className="rounded border border-gray-300 bg-transparent p-3"
-        />
-      </label>
-      <button
-        disabled={busy || !files.length}
-        className="rounded bg-gray-900 p-3 text-white disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900"
-      >
-        {busy ? `Foto ${progress!.done + 1}/${progress!.total}: ${progress!.step}...` : `Salvar ${files.length || ""} foto(s)`}
+
+      <button disabled={busy || !files.length} className={btnPrimary}>
+        {busy
+          ? `Foto ${progress!.done + 1} de ${progress!.total}: ${progress!.step}...`
+          : files.length
+            ? `Salvar ${files.length} foto${files.length > 1 ? "s" : ""}`
+            : "Escolha ao menos uma foto"}
       </button>
       {error && <p className="text-sm text-red-600">{error}</p>}
     </form>
