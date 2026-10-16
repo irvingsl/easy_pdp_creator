@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
-import { browserRemover } from "@/lib/images/remove-background";
-import { composeOnWhite } from "@/lib/images/whiten";
-import { BUCKET_ORIGINAIS, BUCKET_PROCESSADAS } from "@/domain/types";
+import { addPhoto } from "@/lib/photos";
 import { btnPrimary, btnSecondary, inputBase } from "./ui";
 
 type Progress = { done: number; total: number; step: string };
@@ -57,37 +55,14 @@ export function NovoProdutoForm() {
         .single();
       if (pErr) throw pErr;
 
-      for (const i of smalls.keys()) {
-        const base = `${userId}/${produto.id}/${crypto.randomUUID()}`;
-        const step = (s: string) => setProgress({ done: i, total: smalls.length, step: s });
-
-        const small = smalls[i];
-        const pathOriginal = `${base}.jpg`;
-        const up1 = await supabase.storage.from(BUCKET_ORIGINAIS).upload(pathOriginal, small, { contentType: "image/jpeg" });
-        if (up1.error) throw up1.error;
-
-        const { data: foto, error: fErr } = await supabase
-          .from("produto_fotos")
-          .insert({ produto_id: produto.id, path_original: pathOriginal, ordem: i })
-          .select("id")
-          .single();
-        if (fErr) throw fErr;
-
-        try {
-          step("Removendo fundo (a 1ª vez baixa o modelo)");
-          const cutout = await browserRemover.remove(small);
-          step("Aplicando fundo branco");
-          const white = await composeOnWhite(cutout);
-          const pathProcessada = `${base}.jpg`;
-          const up2 = await supabase.storage.from(BUCKET_PROCESSADAS).upload(pathProcessada, white, { contentType: "image/jpeg" });
-          if (up2.error) throw up2.error;
-          await supabase
-            .from("produto_fotos")
-            .update({ path_processada: pathProcessada, status_processamento: "ok" })
-            .eq("id", foto.id);
-        } catch {
-          await supabase.from("produto_fotos").update({ status_processamento: "erro" }).eq("id", foto.id);
-        }
+      for (const [i, small] of smalls.entries()) {
+        await addPhoto(supabase, {
+          userId,
+          produtoId: produto.id,
+          small,
+          ordem: i,
+          step: (label) => setProgress({ done: i, total: smalls.length, step: label }),
+        });
       }
       if (skipped.length) {
         setProgress(null);
