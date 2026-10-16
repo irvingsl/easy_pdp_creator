@@ -34,6 +34,13 @@ export function NovoProdutoForm() {
       const { data: auth } = await supabase.auth.getUser();
       const userId = auth.user!.id;
 
+      // Valida/reduz todas as fotos antes de criar qualquer registro
+      const smalls: Blob[] = [];
+      for (const [i, file] of files.entries()) {
+        setProgress({ done: i, total: files.length, step: "Reduzindo foto" });
+        smalls.push(await compressImage(file));
+      }
+
       const { data: produto, error: pErr } = await supabase
         .from("produtos")
         .insert({ oem_code: oem.trim() || null })
@@ -41,12 +48,11 @@ export function NovoProdutoForm() {
         .single();
       if (pErr) throw pErr;
 
-      for (const [i, file] of files.entries()) {
+      for (const i of files.keys()) {
         const base = `${userId}/${produto.id}/${crypto.randomUUID()}`;
         const step = (s: string) => setProgress({ done: i, total: files.length, step: s });
 
-        step("Reduzindo foto");
-        const small = await compressImage(file);
+        const small = smalls[i];
         const pathOriginal = `${base}.jpg`;
         const up1 = await supabase.storage.from(BUCKET_ORIGINAIS).upload(pathOriginal, small, { contentType: "image/jpeg" });
         if (up1.error) throw up1.error;
