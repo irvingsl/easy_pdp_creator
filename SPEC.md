@@ -105,3 +105,12 @@ Ideia: o sistema vira a **fonte da verdade do estoque** de quem vende em vários
 ## Prompt inicial sugerido para o Claude Code
 
 > Leia o SPEC.md. Vamos construir o MVP em etapas. Comece pelas etapas 1 e 2 da ordem de implementação (esqueleto em Next.js + Supabase, upload de fotos e remoção de fundo). Já no modelo de dados, siga a separação Produto/Anúncio descrita em "Visão futura: estoque centralizado". Antes de codar, proponha a estrutura de pastas e o modelo de dados, e me pergunte o que for necessário.
+
+## Decisões tomadas (out/2026)
+
+- **Descrição do anúncio:** texto original, gerado pela IA a partir de dados estruturados (atributos técnicos, medidas, compatibilidade, código OEM). Nunca copiar o texto livre de outro vendedor. Dados técnicos podem coincidir entre anúncios; a redação é própria. Tom informativo, sem discurso de venda; foco em compatibilidade.
+- **Login do app:** e-mail e senha (Supabase Auth). O Mercado Livre entra como conta conectada (OAuth) na etapa 5.
+- **IA de visão/texto:** começar com opção gratuita (Gemini) atrás de uma interface `VisionProvider`; Claude via API (pré-paga) é opção futura.
+- **Remoção de fundo:** gratuita, no navegador, atrás de `BackgroundRemover`.
+- **Preço de mercado:** fica para depois do MVP; Google via API paga de terceiros (ex.: SerpApi) continua válido para isso. Raspagem direta descartada.
+- **DevCenter do ML:** app criado com a conta pessoal atual (limite de 1 app por conta no Brasil).
