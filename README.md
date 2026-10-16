@@ -3,7 +3,7 @@
 Assistente de anúncios para o Mercado Livre (nicho: autopeças) a partir de fotos. Veja [SPEC.md](SPEC.md).
 
 ## Estado
-Etapas 1 e 2 do SPEC: login por link mágico, upload de fotos e remoção de fundo (gratuita, no navegador) com padronização em fundo branco 1200×1200.
+Etapas 1 e 2 do SPEC: login por e-mail e senha (usuário criado no painel do Supabase), upload de fotos e remoção de fundo (gratuita, no navegador) com padronização em fundo branco 1200×1200.
 
 ## Stack
 Next.js (PWA) · Supabase (auth, Postgres, storage) · Vercel.
