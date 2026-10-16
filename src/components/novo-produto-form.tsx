@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -17,6 +18,7 @@ export function NovoProdutoForm() {
   const [oem, setOem] = useState("");
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
@@ -29,17 +31,24 @@ export function NovoProdutoForm() {
     e.preventDefault();
     if (!files.length) return;
     setError("");
+    setNotice("");
     const supabase = createClient();
     try {
       const { data: auth } = await supabase.auth.getUser();
       const userId = auth.user!.id;
 
-      // Valida/reduz todas as fotos antes de criar qualquer registro
+      // Valida/reduz todas as fotos antes de criar qualquer registro; foto ruim é ignorada
       const smalls: Blob[] = [];
+      const skipped: string[] = [];
       for (const [i, file] of files.entries()) {
         setProgress({ done: i, total: files.length, step: "Reduzindo foto" });
-        smalls.push(await compressImage(file));
+        try {
+          smalls.push(await compressImage(file));
+        } catch {
+          skipped.push(file.name);
+        }
       }
+      if (!smalls.length) throw new Error("Nenhuma das fotos pôde ser aberta. Use JPG, PNG, WebP ou HEIC.");
 
       const { data: produto, error: pErr } = await supabase
         .from("produtos")
@@ -48,9 +57,9 @@ export function NovoProdutoForm() {
         .single();
       if (pErr) throw pErr;
 
-      for (const i of files.keys()) {
+      for (const i of smalls.keys()) {
         const base = `${userId}/${produto.id}/${crypto.randomUUID()}`;
-        const step = (s: string) => setProgress({ done: i, total: files.length, step: s });
+        const step = (s: string) => setProgress({ done: i, total: smalls.length, step: s });
 
         const small = smalls[i];
         const pathOriginal = `${base}.jpg`;
@@ -79,6 +88,12 @@ export function NovoProdutoForm() {
         } catch {
           await supabase.from("produto_fotos").update({ status_processamento: "erro" }).eq("id", foto.id);
         }
+      }
+      if (skipped.length) {
+        setProgress(null);
+        setFiles([]);
+        setNotice(`Produto salvo. Ignoradas por não abrirem: ${skipped.join(", ")}.`);
+        return;
       }
       router.push("/produtos");
       router.refresh();
@@ -157,6 +172,11 @@ export function NovoProdutoForm() {
             ? `Salvar ${files.length} foto${files.length > 1 ? "s" : ""}`
             : "Escolha ao menos uma foto"}
       </button>
+      {notice && (
+        <p className="text-sm text-amber-700">
+          {notice} <Link href="/produtos" className="underline">Ver produtos</Link>
+        </p>
+      )}
       {error && <p className="text-sm text-red-600">{error}</p>}
     </form>
   );

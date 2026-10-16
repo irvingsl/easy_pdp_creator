@@ -28,7 +28,8 @@ export default async function ProdutosPage() {
           ? supabase.storage.from(BUCKET_PROCESSADAS).getPublicUrl(foto.path_processada!).data.publicUrl
           : null;
         return (
-          <li key={p.id} className="overflow-hidden rounded border border-gray-200 dark:border-gray-800">
+          <li key={p.id}>
+           <Link href={`/produtos/${p.id}`} className="block overflow-hidden rounded-lg border border-gray-200 transition hover:border-indigo-500 hover:shadow dark:border-gray-800">
             {url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={url} alt={p.sku} className="aspect-square w-full object-cover" />
@@ -37,8 +38,11 @@ export default async function ProdutosPage() {
             )}
             <div className="p-2 text-sm">
               <div className="font-mono">{p.sku}</div>
-              <div className="text-gray-500">Estoque: {p.estoque}</div>
+              <div className="text-gray-500">
+                {p.produto_fotos?.length ?? 0} foto(s){foto ? "" : " · sem fundo branco"}
+              </div>
             </div>
+           </Link>
           </li>
         );
       })}
