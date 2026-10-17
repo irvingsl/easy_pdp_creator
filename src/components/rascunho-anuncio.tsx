@@ -97,7 +97,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
 
   const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const [pausado, setPausado] = useState(true);
-  const [pub, setPub] = useState<{ ok?: boolean; id?: string; link?: string | null; status?: string; error?: string; resposta?: unknown; avisoDescricao?: unknown; fotosEnviadas?: number; fotosNoML?: number | null } | null>(null);
+  const [pub, setPub] = useState<{ ok?: boolean; id?: string; link?: string | null; status?: string; error?: string; resposta?: unknown; avisoDescricao?: unknown; respostaCriacao?: unknown; fotosEnviadas?: number; fotosNoML?: number | null } | null>(null);
 
   async function publicar() {
     if (!r) return;
@@ -238,6 +238,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
                 {pub.avisoDescricao ? " Atenção: a descrição não foi enviada, edite no ML." : ""}
               </p>
             )}
+            {pub?.ok && pub.respostaCriacao !== undefined && <CopyBlock text={JSON.stringify(pub.respostaCriacao, null, 2)} label="Copiar resposta da criação (ML)" />}
             {pub?.error && (
               <div className="flex flex-col gap-2">
                 <p className="text-red-600">{pub.error}</p>

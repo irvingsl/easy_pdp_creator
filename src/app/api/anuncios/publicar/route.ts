@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       external_id: item.id,
       preco: r.preco,
       status,
+      resposta_criacao: criado.body,
       ultimo_sync_em: new Date().toISOString(),
     });
     await supabase.from("produtos").update({ status: "ativo" }).eq("id", produtoId);
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
       id: item.id,
       link: item.permalink ?? null,
       status,
+      respostaCriacao: criado.body,
       fotosEnviadas: payload.pictures.length,
       fotosNoML: item.pictures?.length ?? null,
       avisoDescricao: desc.ok ? null : { status: desc.status, resposta: desc.body },
