@@ -56,7 +56,7 @@ export async function reprocessPhoto(
   if (up.error) throw up.error;
   await supabase
     .from("produto_fotos")
-    .update({ path_processada: novo, status_processamento: "ok" })
+    .update({ path_processada: novo, status_processamento: "ok", manter_original: false })
     .eq("id", p.fotoId);
   if (p.pathProcessada) await supabase.storage.from(BUCKET_PROCESSADAS).remove([p.pathProcessada]);
 }
@@ -69,4 +69,24 @@ export async function deletePhoto(
   if (p.pathProcessada) await supabase.storage.from(BUCKET_PROCESSADAS).remove([p.pathProcessada]);
   const { error } = await supabase.from("produto_fotos").delete().eq("id", p.fotoId);
   if (error) throw error;
+}
+
+/**
+ * Usa a foto original no anúncio no lugar da versão com fundo branco (quando o recorte estragou a peça).
+ * O ML precisa baixar a imagem, então a cópia vai para o bucket público.
+ */
+export async function keepOriginal(
+  supabase: SupabaseClient,
+  p: { userId: string; produtoId: string; fotoId: string; pathOriginal: string; pathProcessada: string | null },
+) {
+  const { data: original, error } = await supabase.storage.from(BUCKET_ORIGINAIS).download(p.pathOriginal);
+  if (error) throw error;
+  const novo = `${p.userId}/${p.produtoId}/${crypto.randomUUID()}.jpg`;
+  const up = await supabase.storage.from(BUCKET_PROCESSADAS).upload(novo, original, { contentType: "image/jpeg" });
+  if (up.error) throw up.error;
+  await supabase
+    .from("produto_fotos")
+    .update({ path_processada: novo, status_processamento: "ok", manter_original: true })
+    .eq("id", p.fotoId);
+  if (p.pathProcessada) await supabase.storage.from(BUCKET_PROCESSADAS).remove([p.pathProcessada]);
 }

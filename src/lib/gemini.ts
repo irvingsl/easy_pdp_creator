@@ -275,31 +275,11 @@ export async function identifyPart(images: { mime: string; data: string }[], not
         lastGood = model;
         const g = readGrounding(body, grounded);
         const { narrativa, analysis } = splitResponse(g.text);
-        let result: GeminiResult = {
+        const result: GeminiResult = {
           analysis, narrativa, text: g.text, sources: g.sources, model, grounded,
           pesquisou: g.pesquisou, consultas: g.consultas, tentativas,
         };
 
-        // Se a IA não pesquisou, faz uma 2ª chamada curta e focada, que a leva a pesquisar
-        if (grounded && analysis && !g.pesquisou) {
-          const r2 = await callGemini(model, [{ text: buildResearchPrompt(analysis, notes) }], true);
-          tentativas.push({ model, grounded: true, status: r2.res.status });
-          if (r2.res.ok) {
-            const g2 = readGrounding(r2.body, true);
-            const s2 = splitResponse(g2.text);
-            if (g2.pesquisou) {
-              result = {
-                ...result,
-                analysis: s2.analysis ?? analysis,
-                narrativa: [narrativa, s2.narrativa && `— Pesquisa na web —\n${s2.narrativa}`].filter(Boolean).join("\n\n"),
-                text: g2.text,
-                sources: g2.sources,
-                pesquisou: true,
-                consultas: g2.consultas,
-              };
-            }
-          }
-        }
         return result;
       }
       lastError = `Gemini ${res.status} (${model}): ${JSON.stringify(body?.error ?? body).slice(0, 300)}`;
@@ -307,4 +287,14 @@ export async function identifyPart(images: { mime: string; data: string }[], not
     }
   }
   throw new Error(`${lastError} | tentativas: ${tentativas.map((t) => `${t.model}${t.grounded ? "+web" : ""}=${t.status}`).join(", ")}. Veja https://ai.dev/rate-limit`);
+}
+
+/** 2ª etapa (chamada separada, para caber no tempo da função): pesquisa curta e focada, que leva o Gemini a pesquisar. */
+export async function pesquisaFocada(prev: PartAnalysis, notes: string | undefined, model: string) {
+  if (!process.env.GEMINI_API_KEY) throw new Error("Defina GEMINI_API_KEY");
+  const { res, body } = await callGemini(model, [{ text: buildResearchPrompt(prev, notes) }], true);
+  if (!res.ok) return { status: res.status, erro: JSON.stringify(body?.error ?? body).slice(0, 300) } as const;
+  const g = readGrounding(body, true);
+  const sp = splitResponse(g.text);
+  return { status: res.status, analysis: sp.analysis, narrativa: sp.narrativa, sources: g.sources, consultas: g.consultas, pesquisou: g.pesquisou } as const;
 }

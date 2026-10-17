@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
-import { addPhoto, deletePhoto, reprocessPhoto } from "@/lib/photos";
+import { addPhoto, deletePhoto, keepOriginal, reprocessPhoto } from "@/lib/photos";
 import { btnSecondary } from "./ui";
 
 export type FotoView = {
@@ -15,6 +15,7 @@ export type FotoView = {
   pathProcessada: string | null;
   originalUrl: string | null;
   processadaUrl: string | null;
+  manterOriginal: boolean;
 };
 
 const STATUS_LABEL = { pendente: "Processando", ok: "Fundo branco pronto", erro: "Falhou" } as const;
@@ -108,7 +109,7 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
               Foto {i + 1} · <span className="font-normal text-gray-500">{STATUS_LABEL[f.status]}</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {([["Original", f.originalUrl], ["Fundo branco", f.processadaUrl]] as const).map(([label, src]) => (
+              {([["Original", f.originalUrl], [f.manterOriginal ? "No anúncio: original" : "Fundo branco", f.processadaUrl]] as const).map(([label, src]) => (
                 <figure key={label} className="flex flex-col gap-1">
                   {src ? (
                     <button type="button" onClick={() => setZoom({ src, label: `${label} · foto ${i + 1}` })} className="cursor-zoom-in">
@@ -122,7 +123,27 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
                 </figure>
               ))}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              {!f.manterOriginal && (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  className={smallBtn}
+                  onClick={() =>
+                    run(`Mantendo a original da foto ${i + 1}`, () =>
+                      keepOriginal(createClient(), {
+                        userId,
+                        produtoId,
+                        fotoId: f.id,
+                        pathOriginal: f.pathOriginal,
+                        pathProcessada: f.pathProcessada,
+                      }),
+                    )
+                  }
+                >
+                  Manter original
+                </button>
+              )}
               <button
                 type="button"
                 disabled={disabled}
@@ -140,7 +161,7 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
                   )
                 }
               >
-                Refazer fundo
+                {f.manterOriginal ? "Voltar ao fundo branco" : "Refazer fundo"}
               </button>
               <button
                 type="button"

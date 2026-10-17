@@ -14,7 +14,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
 
   const { data: produto } = await supabase
     .from("produtos")
-    .select("id, user_id, sku, identificacao, dados_confirmados, oem_code, titulo_base, estoque, status, criado_em, produto_fotos(id, path_original, path_processada, status_processamento, ordem)")
+    .select("id, user_id, sku, identificacao, dados_confirmados, oem_code, titulo_base, estoque, status, criado_em, produto_fotos(id, path_original, path_processada, status_processamento, ordem, manter_original)")
     .eq("id", id)
     .maybeSingle();
   if (!produto) notFound();
@@ -48,6 +48,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
           status: f.status_processamento as FotoView["status"],
           pathOriginal: f.path_original,
           pathProcessada: f.path_processada,
+          manterOriginal: f.manter_original,
           originalUrl: originalUrl.get(f.path_original) ?? null,
           processadaUrl: f.path_processada
             ? supabase.storage.from(BUCKET_PROCESSADAS).getPublicUrl(f.path_processada).data.publicUrl

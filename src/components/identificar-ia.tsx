@@ -50,23 +50,49 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [cego, setCego] = useState(false);
+  const [fase, setFase] = useState("");
+
+  /** Chama uma etapa; a resposta pode não ser JSON (ex.: página de erro da Vercel por tempo esgotado). */
+  async function etapa(nome: string, body: object) {
+    const r = await fetch("/api/identificar", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const txt = await r.text();
+    let data: { error?: string } & Record<string, unknown>;
+    try {
+      data = JSON.parse(txt);
+    } catch {
+      const timeout = r.status === 504 || /timeout|FUNCTION_INVOCATION|An error o/i.test(txt);
+      throw new Error(
+        timeout
+          ? `Tempo esgotado na etapa "${nome}" (HTTP ${r.status}). Tente de novo; se repetir, me avise.`
+          : `Resposta inesperada na etapa "${nome}" (HTTP ${r.status}): ${txt.slice(0, 160)}`,
+      );
+    }
+    if (!r.ok) throw new Error(`Etapa "${nome}": ${data.error ?? `HTTP ${r.status}`}`);
+    return data;
+  }
 
   async function identificar() {
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/identificar", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ produtoId, cego }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
-      setRes(data);
+      setFase("Lendo as fotos (pode levar até 1 min)...");
+      let parcial = await etapa("fotos", { produtoId, cego, etapa: "fotos" });
+      if (!parcial.pesquisou && parcial.grounded) {
+        setFase("Pesquisando na web...");
+        parcial = await etapa("pesquisa", { produtoId, cego, etapa: "pesquisa", parcial });
+      }
+      setFase("Conferindo no catálogo do Mercado Livre...");
+      const final = await etapa("final", { produtoId, cego, etapa: "final", parcial });
+      setRes(final as unknown as Identificacao);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro inesperado");
     } finally {
       setBusy(false);
+      setFase("");
     }
   }
 
@@ -93,7 +119,7 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-medium">Identificação com IA</h2>
         <button onClick={identificar} disabled={busy} className={btnPrimary}>
-          {busy ? "Analisando (pode levar até 1 min)..." : res ? "Identificar de novo" : "Identificar com IA"}
+          {busy ? fase || "Analisando..." : res ? "Identificar de novo" : "Identificar com IA"}
         </button>
       </div>
       <label className="flex items-center gap-2 text-sm">

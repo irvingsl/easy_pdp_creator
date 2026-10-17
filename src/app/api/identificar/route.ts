@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { identifyPart } from "@/lib/gemini";
+import { identifyPart, pesquisaFocada, type PartAnalysis } from "@/lib/gemini";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
 import { lookupPartNumber, type CatalogHit } from "@/marketplaces/mercadolivre/catalog";
 import { BUCKET_ORIGINAIS } from "@/domain/types";
@@ -26,8 +26,32 @@ function certainty(sources: number, catalogHits: number, mainFound: boolean, ima
   return { level, reasons };
 }
 
+type Parcial = {
+  analysis: PartAnalysis;
+  narrativa: string;
+  sources: { title: string; uri: string }[];
+  consultas: string[];
+  pesquisou: boolean;
+  model: string;
+  grounded?: boolean;
+  tentativas: { model: string; grounded: boolean; status: number }[];
+  visao?: VisaoResult | null;
+};
+
+/**
+ * A identificação roda em 3 etapas, cada uma numa chamada própria (o cliente as encadeia),
+ * para que nenhuma estoure o tempo máximo da função:
+ *  "fotos"    -> Gemini lê as fotos (com busca na web)
+ *  "pesquisa" -> pesquisa focada, só se a 1ª etapa não pesquisou
+ *  "final"    -> confere no catálogo do ML, calcula a certeza e salva
+ */
 export async function POST(request: NextRequest) {
-  const { produtoId, cego } = (await request.json().catch(() => ({}))) as { produtoId?: string; cego?: boolean };
+  const { produtoId, cego, etapa = "fotos", parcial } = (await request.json().catch(() => ({}))) as {
+    produtoId?: string;
+    cego?: boolean;
+    etapa?: "fotos" | "pesquisa" | "final";
+    parcial?: Parcial;
+  };
   if (!produtoId) return NextResponse.json({ error: "produtoId obrigatório" }, { status: 400 });
 
   const supabase = await createClient();
@@ -41,36 +65,61 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
   if (!produto) return NextResponse.json({ error: "produto não encontrado" }, { status: 404 });
 
-  const paths = [...produto.produto_fotos].sort((a, b) => a.ordem - b.ordem).slice(0, MAX_PHOTOS).map((f) => f.path_original);
-  if (!paths.length) return NextResponse.json({ error: "o produto não tem fotos" }, { status: 400 });
+  // Teste às cegas: ignora o que o vendedor já confirmou, para ver se dá para identificar só pelas fotos
+  const confirmados = cego ? undefined : notasParaIA(produto.oem_code, produto.dados_confirmados as DadosConfirmados | null);
 
   try {
-    const images = await Promise.all(
-      paths.map(async (p) => {
-        const { data, error } = await supabase.storage.from(BUCKET_ORIGINAIS).download(p);
-        if (error) throw error;
-        return { mime: "image/jpeg", data: Buffer.from(await data.arrayBuffer()).toString("base64") };
-      }),
-    );
-    // Teste às cegas: ignora o que o vendedor já confirmou, para ver se dá para identificar só pelas fotos
-    const confirmados = cego ? undefined : notasParaIA(produto.oem_code, produto.dados_confirmados as DadosConfirmados | null);
+    if (etapa === "fotos") {
+      const paths = [...produto.produto_fotos].sort((a, b) => a.ordem - b.ordem).slice(0, MAX_PHOTOS).map((f) => f.path_original);
+      if (!paths.length) return NextResponse.json({ error: "o produto não tem fotos" }, { status: 400 });
+      const images = await Promise.all(
+        paths.map(async (p) => {
+          const { data, error } = await supabase.storage.from(BUCKET_ORIGINAIS).download(p);
+          if (error) throw error;
+          return { mime: "image/jpeg", data: Buffer.from(await data.arrayBuffer()).toString("base64") };
+        }),
+      );
 
-    // Busca por imagem (Cloud Vision): as primeiras fotos; se falhar, segue sem ela
-    let visao: VisaoResult | null = null;
-    try {
-      visao = await buscaPorImagem(images.slice(0, 3));
-    } catch (e) {
-      visao = { palpites: [], entidades: [], paginas: [], erro: e instanceof Error ? e.message : "falha na busca por imagem" };
+      // Busca por imagem (desligada por padrão); se falhar, segue sem ela
+      let visao: VisaoResult | null = null;
+      try {
+        visao = await buscaPorImagem(images.slice(0, 3));
+      } catch (e) {
+        visao = { palpites: [], entidades: [], paginas: [], erro: e instanceof Error ? e.message : "falha na busca por imagem" };
+      }
+
+      const notas = [confirmados, evidenciasParaIA(visao)].filter(Boolean).join("\n\n") || undefined;
+      const gem = await identifyPart(images, notas);
+      if (!gem.analysis) {
+        return NextResponse.json({ error: "A IA não devolveu um JSON válido", raw: gem.text, sources: gem.sources }, { status: 502 });
+      }
+      const out: Parcial = {
+        analysis: gem.analysis, narrativa: gem.narrativa, sources: gem.sources, consultas: gem.consultas,
+        pesquisou: gem.pesquisou, model: gem.model, grounded: gem.grounded, tentativas: gem.tentativas, visao,
+      };
+      return NextResponse.json(out);
     }
 
-    const notas = [confirmados, evidenciasParaIA(visao)].filter(Boolean).join("\n\n") || undefined;
-    const gem = await identifyPart(images, notas);
-    if (!gem.analysis) {
-      return NextResponse.json({ error: "A IA não devolveu um JSON válido", raw: gem.text, sources: gem.sources }, { status: 502 });
+    if (!parcial?.analysis) return NextResponse.json({ error: "faltam os dados da etapa anterior" }, { status: 400 });
+
+    if (etapa === "pesquisa") {
+      const r = await pesquisaFocada(parcial.analysis, confirmados, parcial.model);
+      const tentativas = [...parcial.tentativas, { model: parcial.model, grounded: true, status: r.status }];
+      if (!("analysis" in r) || !r.pesquisou) return NextResponse.json({ ...parcial, tentativas });
+      const out: Parcial = {
+        ...parcial,
+        analysis: r.analysis ?? parcial.analysis,
+        narrativa: [parcial.narrativa, r.narrativa && `— Pesquisa na web —\n${r.narrativa}`].filter(Boolean).join("\n\n"),
+        sources: r.sources,
+        consultas: r.consultas,
+        pesquisou: true,
+        tentativas,
+      };
+      return NextResponse.json(out);
     }
 
-    // Confere cada número encontrado no catálogo do ML (evidência independente do Google)
-    const a = gem.analysis;
+    // etapa "final": conferência no catálogo do ML, certeza e gravação
+    const a = parcial.analysis;
     // Só números de peça e equivalentes; códigos de processo (lote, data...) não vão ao catálogo
     const codes = [
       ...new Set(
@@ -94,16 +143,16 @@ export async function POST(request: NextRequest) {
     const mainFound = catalog.some((c) => c.relevante && c.code === a.numero_peca_principal?.replace(/\s+/g, ""));
     const result = {
       analysis: a,
-      narrativa: gem.narrativa,
-      visao,
+      narrativa: parcial.narrativa,
+      visao: parcial.visao ?? null,
       cego: !!cego,
-      sources: gem.sources,
+      sources: parcial.sources,
       catalog,
-      certeza: certainty(gem.sources.length, catalog.filter((c) => c.relevante).length, mainFound, visao?.paginas.length ?? 0),
-      model: gem.model,
-      buscaWeb: gem.pesquisou,
-      consultas: gem.consultas,
-      tentativas: gem.tentativas,
+      certeza: certainty(parcial.sources.length, catalog.filter((c) => c.relevante).length, mainFound, parcial.visao?.paginas.length ?? 0),
+      model: parcial.model,
+      buscaWeb: parcial.pesquisou,
+      consultas: parcial.consultas,
+      tentativas: parcial.tentativas,
       geradoEm: new Date().toISOString(),
     };
     await supabase.from("produtos").update({ identificacao: result, identificado_em: result.geradoEm }).eq("id", produtoId);
