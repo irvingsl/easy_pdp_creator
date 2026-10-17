@@ -72,6 +72,30 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
     }
   }
 
+  type Calc = { preco?: number; comissao?: number | null; detalhes?: { percentage_fee?: number; fixed_fee?: number } | null; freteTabela?: number | null; brutos?: unknown; error?: string };
+  const [calc, setCalc] = useState<Calc | null>(null);
+  const [freteReal, setFreteReal] = useState("");
+
+  async function calcular() {
+    if (!r) return;
+    setBusy(true);
+    setCalc(null);
+    try {
+      const { error } = await createClient().from("produtos").update({ rascunho: r }).eq("id", produtoId);
+      if (error) return setCalc({ error: error.message });
+      const res = await fetch("/api/anuncios/calcular", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ produtoId }) });
+      const txt = await res.text();
+      try {
+        setCalc(JSON.parse(txt));
+      } catch {
+        setCalc({ error: `Resposta inesperada (${res.status})` });
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const [pausado, setPausado] = useState(true);
   const [pub, setPub] = useState<{ ok?: boolean; id?: string; link?: string | null; status?: string; error?: string; resposta?: unknown; avisoDescricao?: unknown } | null>(null);
 
@@ -223,6 +247,44 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
                 <CopyBlock text={`HTTP ${ml.status}\n${JSON.stringify(ml.resposta, null, 2)}\n\nDados enviados:\n${JSON.stringify(ml.payload, null, 2)}`} label="Copiar resposta e dados" />
               </div>
             )}
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
+            <span className="font-medium">Quanto sobra para você</span>
+            <button type="button" className={btnSecondary} disabled={busy || !r.preco || !r.categoria_id} onClick={calcular}>Calcular (comissão e frete)</button>
+            {calc?.error && <p className="text-red-600">{calc.error}</p>}
+            {calc?.preco !== undefined && (() => {
+              const preco = calc.preco;
+              const com = calc.comissao ?? 0;
+              const tabela = calc.freteTabela;
+              const informado = freteReal.trim() ? Number(freteReal.replace(",", ".")) : NaN;
+              const frete = Number.isFinite(informado) ? informado : tabela;
+              const linhas: [string, string][] = [
+                ["Preço de venda", reais(preco)],
+                [`Comissão do ML${calc.detalhes?.percentage_fee != null ? ` (${calc.detalhes.percentage_fee}%${calc.detalhes.fixed_fee ? ` + ${reais(calc.detalhes.fixed_fee)} fixos` : ""})` : ""}`, calc.comissao == null ? "não obtida" : `− ${reais(com)}`],
+                ["Sobra sem contar o frete", calc.comissao == null ? "?" : reais(preco - com)],
+                [Number.isFinite(informado) ? "Frete (valor que você informou)" : "Frete grátis (custo de tabela do ML)", frete == null ? "não obtido" : `− ${reais(frete)}`],
+              ];
+              return (
+                <div className="flex flex-col gap-2">
+                  <table className="w-full text-left">
+                    <tbody>
+                      {linhas.map(([k, v]) => (
+                        <tr key={k} className="border-t border-gray-200 dark:border-gray-800"><td className="py-1 pr-2">{k}</td><td className="py-1 text-right">{v}</td></tr>
+                      ))}
+                      {frete != null && calc.comissao != null && (
+                        <tr className="border-t border-gray-300 font-medium dark:border-gray-700"><td className="py-1">Sobra com frete</td><td className="py-1 text-right">{reais(preco - com - frete)}</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                  <label className="flex flex-col gap-1 text-xs text-gray-500">
+                    O frete real depende da sua reputação (o ML dá desconto). Se você vê outro valor no ML, digite aqui:
+                    <input className={inputBase} inputMode="decimal" placeholder="Frete que o ML mostra para você (R$)" value={freteReal} onChange={(e) => setFreteReal(e.target.value)} />
+                  </label>
+                  <CopyBlock text={JSON.stringify(calc.brutos, null, 2)} label="Copiar resposta do ML" />
+                </div>
+              );
+            })()}
           </div>
 
           {r.avisos.length > 0 && (
