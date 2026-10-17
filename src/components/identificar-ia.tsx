@@ -14,6 +14,7 @@ export type Identificacao = {
   catalog: CatalogHit[];
   certeza: { level: "alta" | "média" | "baixa"; reasons: string[] };
   model: string;
+  buscaWeb?: boolean;
   geradoEm: string;
 };
 
@@ -69,6 +70,11 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
 
       {res && a && (
         <div className="flex flex-col gap-4 text-sm">
+          {res.buscaWeb === false && (
+            <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              A busca na web ficou indisponível (cota do Gemini). Esta resposta veio só das fotos, sem fontes. Trate tudo como suposição até confirmar.
+            </p>
+          )}
           <div className="flex flex-col gap-1">
             <span className={`self-start rounded-full px-3 py-1 text-xs font-medium ${BADGE[res.certeza.level]}`}>
               Certeza {res.certeza.level}

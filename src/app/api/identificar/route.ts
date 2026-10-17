@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
       catalog,
       certeza: certainty(gem.sources.length, catalog.filter((c) => c.exact).length, mainFound),
       model: gem.model,
+      buscaWeb: gem.grounded,
       geradoEm: new Date().toISOString(),
     };
     await supabase.from("produtos").update({ identificacao: result, identificado_em: result.geradoEm }).eq("id", produtoId);

@@ -19,6 +19,8 @@ export type GeminiResult = {
   text: string;
   sources: { title: string; uri: string }[];
   model: string;
+  /** false quando a busca na web ficou indisponível (cota) e a IA respondeu só pelas fotos */
+  grounded: boolean;
 };
 
 const PROMPT = `Você é especialista em autopeças brasileiras. As fotos mostram a MESMA peça automotiva, de estoque antigo, sem informação nenhuma sobre ela.
@@ -55,10 +57,9 @@ function extractJson(text: string): PartAnalysis | null {
   }
 }
 
-export async function identifyPart(images: { mime: string; data: string }[], notes?: string): Promise<GeminiResult> {
+async function generate(images: { mime: string; data: string }[], notes: string | undefined, grounded: boolean) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Defina GEMINI_API_KEY");
-
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": key },
@@ -72,17 +73,31 @@ export async function identifyPart(images: { mime: string; data: string }[], not
           ],
         },
       ],
-      tools: [{ google_search: {} }],
+      ...(grounded ? { tools: [{ google_search: {} }] } : {}),
       generationConfig: { temperature: 0.2 },
     }),
   });
   const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${JSON.stringify(body?.error ?? body).slice(0, 600)}`);
+  return { res, body };
+}
+
+export async function identifyPart(images: { mime: string; data: string }[], notes?: string): Promise<GeminiResult> {
+  let grounded = true;
+  let { res, body } = await generate(images, notes, true);
+  if (res.status === 429) {
+    // Sem cota para busca na web: tenta só com as fotos
+    grounded = false;
+    ({ res, body } = await generate(images, notes, false));
+  }
+  if (!res.ok) {
+    const quota = res.status === 429 ? " Cota do Gemini esgotada para este modelo; veja https://ai.dev/rate-limit ou defina GEMINI_MODEL." : "";
+    throw new Error(`Gemini ${res.status}: ${JSON.stringify(body?.error ?? body).slice(0, 500)}${quota}`);
+  }
 
   const cand = body?.candidates?.[0];
   const text: string = (cand?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
   const sources = ((cand?.groundingMetadata?.groundingChunks ?? []) as { web?: { uri: string; title: string } }[])
     .filter((c) => c.web)
     .map((c) => ({ title: c.web!.title, uri: c.web!.uri }));
-  return { analysis: extractJson(text), text, sources, model: MODEL };
+  return { analysis: extractJson(text), text, sources, model: MODEL, grounded };
 }
