@@ -423,7 +423,7 @@ Regras:
 1. Use somente os fatos informados. Não invente medida, compatibilidade, estado, garantia nem marca.
 2. Estilo próprio: claro, direto, honesto. Pode seguir a estrutura típica dos bons anúncios do segmento (peça, veículos com anos, número da peça, o que está incluso, avisos úteis), mas não copie frases de outros anúncios.
 3. "titulo": no máximo 60 caracteres, sem emojis nem palavras de marketing vazias; tipo da peça + marca + número da peça + principais veículos que couberem.
-4. "descricao": texto simples (sem HTML), em parágrafos curtos e listas com hífen: o que é, o que está incluso (unidade), características, número da peça, lista de compatibilidade e uma orientação para conferir o número/medidas antes de comprar. Não prometa nada que não está nos fatos.
+4. "descricao": texto simples (sem HTML), em parágrafos curtos e listas com hífen: o que é, o que está incluso (unidade), características, número da peça e uma orientação para conferir o número/medidas antes de comprar. NÃO inclua a lista de veículos compatíveis (o sistema a acrescenta depois, só com o que o vendedor confirmou). A descrição é lida por compradores: nunca mencione IA, pesquisa, web, fontes, "sugestão" nem o processo de criação do texto. Não prometa nada que não está nos fatos.
 5. "compatibilidade": veículo com motor e anos, um por linha. Origem "confirmado" só se o vendedor informou; o que veio da web é "sugerido_web".
 6. "atributos": nome, valor e origem (confirmado, lido_no_item, contado_na_foto ou web), só com o que está nos fatos.
 7. "preco_faixa": só se houver faixa nos fatos, senão null. "preco": sempre null.

@@ -97,7 +97,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
 
   const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const [pausado, setPausado] = useState(true);
-  const [pub, setPub] = useState<{ ok?: boolean; id?: string; link?: string | null; status?: string; error?: string; resposta?: unknown; avisoDescricao?: unknown } | null>(null);
+  const [pub, setPub] = useState<{ ok?: boolean; id?: string; link?: string | null; status?: string; error?: string; resposta?: unknown; avisoDescricao?: unknown; fotosEnviadas?: number; fotosNoML?: number | null } | null>(null);
 
   async function publicar() {
     if (!r) return;
@@ -234,6 +234,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
               <p className="rounded-lg bg-green-50 p-3 text-green-900 dark:bg-green-950 dark:text-green-200">
                 ✓ Criado: {pub.id} ({pub.status === "paused" ? "pausado" : pub.status}).{" "}
                 {pub.link && <a className="underline" href={pub.link} target="_blank" rel="noreferrer">Abrir no ML</a>}
+                {pub.fotosNoML === 0 ? " Atenção: o ML não registrou nenhuma foto." : ""}
                 {pub.avisoDescricao ? " Atenção: a descrição não foi enviada, edite no ML." : ""}
               </p>
             )}

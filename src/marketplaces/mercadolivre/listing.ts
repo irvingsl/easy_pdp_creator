@@ -78,3 +78,11 @@ export function analisarValidacao(res: { ok: boolean; status: number; body: unkn
   const aceito = res.ok || (causas.length > 0 && erros.length === 0);
   return { aceito, erros, avisos };
 }
+
+/** Descrição final: o texto do vendedor mais a lista de compatibilidade confirmada (se o texto ainda não a trouxer). */
+export function descricaoFinal(r: Rascunho) {
+  const confirmadas = r.compatibilidade.filter((c) => c.origem === "confirmado");
+  if (!confirmadas.length || /compat[ií]vel|compatibilidade/i.test(r.descricao)) return r.descricao;
+  const linhas = confirmadas.map((c) => `- ${c.veiculo}${c.anos ? ` ${c.anos}` : ""}`);
+  return `${r.descricao.trim()}\n\nCompatível com:\n${linhas.join("\n")}`;
+}
