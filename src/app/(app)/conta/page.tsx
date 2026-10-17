@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccessToken, getAccount } from "@/marketplaces/mercadolivre/accounts";
 import { mlGet } from "@/marketplaces/mercadolivre/oauth";
 import { btnPrimary, btnSecondary, inputBase } from "@/components/ui";
+import { CopyBlock } from "@/components/copy-block";
 
 type Resp = Awaited<ReturnType<typeof mlGet>>;
 type Attr = { id: string; value_name?: string };
@@ -10,7 +11,7 @@ type Domain = { domain_id: string; domain_name: string; category_id: string; cat
 type CatAttr = { id: string; name: string; value_type?: string; tags?: Record<string, boolean> };
 
 const attr = (p: Prod, id: string) => p.attributes?.find((a) => a.id === id)?.value_name ?? "";
-const raw = (b: unknown, n = 2500) => JSON.stringify(b, null, 2)?.slice(0, n);
+const raw = (b: unknown, n = 20000) => JSON.stringify(b, null, 2)?.slice(0, n) ?? "";
 
 /** Variações comuns de escrita de cada número de peça que aparecer na busca. */
 function variants(q: string): string[] {
@@ -33,7 +34,7 @@ function Status({ label, r }: { label: string; r: Resp }) {
   return <p className="text-sm text-gray-500">{label} → <strong>HTTP {r.status}</strong></p>;
 }
 function Raw({ body }: { body: unknown }) {
-  return <pre className="max-h-64 overflow-auto rounded-lg bg-gray-100 p-3 text-xs dark:bg-gray-900">{raw(body)}</pre>;
+  return <CopyBlock text={raw(body)} />;
 }
 
 export default async function ContaPage(props: PageProps<"/conta">) {
