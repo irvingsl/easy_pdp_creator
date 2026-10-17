@@ -271,7 +271,7 @@ function readGrounding(body: { candidates?: { content?: { parts?: { text?: strin
 }
 
 /** Pergunta direta (formato que faz o Gemini pesquisar), montada só com fatos sólidos. */
-function perguntaDePesquisa(prev: PartAnalysis, conf: DadosConfirmados | null | undefined): string {
+export function perguntaDePesquisa(prev: PartAnalysis, conf: DadosConfirmados | null | undefined): string {
   const fmt = (c: { nome: string; valor: string; unidade?: string | null }) => `${c.nome} ${c.valor}${c.unidade ? ` ${c.unidade}` : ""}`;
   const doVendedor = (conf?.caracteristicas ?? []).map(fmt);
   const daFoto = (prev.caracteristicas ?? [])
@@ -316,7 +316,7 @@ ${pesquisa}
 """
 
 Atualize o JSON da análise com o que a pesquisa trouxe, mantendo o que as fotos já mostravam. Regras: use só o que está no resultado da pesquisa, com a URL de cada informação quando houver; se a pesquisa não encontrou algo, use null; se as fontes divergirem, mostre as duas versões; os fatos confirmados pelo vendedor prevalecem sobre qualquer fonte; diferencie o número de peça do item do número de um kit ou conjunto; nunca invente preço nem URL.
-Números vindos da pesquisa são CANDIDATOS: preencha "candidatos" (até 5) com o que combina, o que não foi confirmado e como confirmar (qual medida ou foto distingue). Só preencha "numero_peca_principal" se o número estiver gravado e legível no item ou confirmado pelo vendedor; caso contrário, deixe null. Aplicações ficam dentro de cada candidato.
+Números vindos da pesquisa são CANDIDATOS: preencha "candidatos" (até 5) com o que combina, o que não foi confirmado e como confirmar (qual medida ou foto distingue). Só preencha "numero_peca_principal" se o número estiver gravado e legível no item ou confirmado pelo vendedor; caso contrário, deixe null. Aplicações ficam dentro de cada candidato. Se "numero_peca_principal" já existe na análise anterior, NÃO crie candidatos novos: use a pesquisa só para confirmar esse número e preencher características, aplicações e equivalentes (estes só se a pesquisa os ligar explicitamente ao número).
 
 Responda SOMENTE com o JSON, dentro de um bloco \`\`\`json, neste formato:
 ${SCHEMA}`;

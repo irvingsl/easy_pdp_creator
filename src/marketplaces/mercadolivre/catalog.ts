@@ -18,8 +18,10 @@ export type CatalogHit = {
 
 const attr = (p: Prod, id: string) => p.attributes?.find((a) => a.id === id)?.value_name ?? "";
 
-/** Busca um número de peça no catálogo do ML; `exact` só quando o ML o reconhece como PART_NUMBER. */
-export async function lookupPartNumber(token: string, code: string): Promise<CatalogHit> {
+/** Escritas diferentes do mesmo número: "040.141.031.7", "040141031 7", "0401410317". */
+const variantes = (code: string) => [...new Set([code.trim(), code.replace(/\s+/g, ""), code.replace(/[^0-9A-Za-z]/g, "")])].filter(Boolean);
+
+async function buscar(token: string, code: string): Promise<CatalogHit> {
   const r = await mlGet(`/products/search?site_id=MLB&q=${encodeURIComponent(code)}&limit=5`, token);
   const b = r.body as { query_type?: string; paging?: { total?: number }; results?: Prod[] } | null;
   const exact = b?.query_type === "PART_NUMBER";
@@ -40,4 +42,15 @@ export async function lookupPartNumber(token: string, code: string): Promise<Cat
         }))
       : [],
   };
+}
+
+/** Busca um número de peça no catálogo do ML, tentando as variantes de escrita; `exact` só quando o ML o reconhece como PART_NUMBER. */
+export async function lookupPartNumber(token: string, code: string): Promise<CatalogHit> {
+  let ultimo: CatalogHit | null = null;
+  for (const v of variantes(code)) {
+    const hit = await buscar(token, v);
+    if (hit.exact) return { ...hit, code };
+    ultimo = hit;
+  }
+  return { ...(ultimo as CatalogHit), code };
 }

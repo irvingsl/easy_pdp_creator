@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
     ].slice(0, 8);
     let catalog: CatalogHit[] = [];
     const token = await getAccessToken(supabase);
-    if (token) catalog = await Promise.all(codes.map((c) => lookupPartNumber(token, c.replace(/\s+/g, ""))));
+    if (token) catalog = await Promise.all(codes.map((c) => lookupPartNumber(token, c)));
 
     // Só vale o que o ML reconhece como número de peça E é do mesmo tipo de peça
     const kw = keyword(a.tipo_item);
@@ -182,7 +182,8 @@ export async function POST(request: NextRequest) {
       return { ...c, relevante, ignorado: c.exact && !relevante ? "existe no catálogo, mas é outro tipo de peça (ignorado)" : undefined };
     });
 
-    const mainFound = catalog.some((c) => c.relevante && c.code === a.numero_peca_principal?.replace(/\s+/g, ""));
+    const alnum = (t?: string | null) => (t ?? "").replace(/[^0-9a-z]/gi, "").toLowerCase();
+    const mainFound = catalog.some((c) => c.relevante && alnum(c.code) === alnum(a.numero_peca_principal));
     const result = {
       analysis: a,
       narrativa: p.narrativa,

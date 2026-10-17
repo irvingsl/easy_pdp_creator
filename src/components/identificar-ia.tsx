@@ -236,7 +236,7 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
               <p className="text-xs text-gray-500">Inferidos pela pesquisa; mais de um modelo pode ter as mesmas medidas. Confirme com o item na mão.</p>
               <ul className="mt-2 flex flex-col gap-3">
                 {a.candidatos.map((c) => {
-                  const noCatalogo = res.catalog.find((k) => k.relevante && k.code === c.numero_de_peca.replace(/\s+/g, ""));
+                  const noCatalogo = res.catalog.find((k) => k.relevante && k.code.replace(/[^0-9a-z]/gi, "").toLowerCase() === c.numero_de_peca.replace(/[^0-9a-z]/gi, "").toLowerCase());
                   return (
                     <li key={c.numero_de_peca} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
                       <div className="flex flex-wrap items-center gap-2">
