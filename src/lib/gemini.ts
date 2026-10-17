@@ -288,9 +288,9 @@ function perguntaDePesquisa(prev: PartAnalysis, conf: DadosConfirmados | null | 
     marca ? `da marca ${marca}` : "",
     prev.formato_de_venda && prev.formato_de_venda !== "indefinido" ? `(${prev.formato_de_venda})` : "",
   ].filter(Boolean).join(" ");
-  // só leituras boas entram na pergunta; texto parcialmente legível não é pista
-  const gravados = (prev.textos_gravados ?? []).filter((t) => t.legibilidade === "boa").map((t) => t.texto).join(", ");
-  return `Pesquise na web: quais números de peça do fabricante correspondem a ${item}${fatos ? `, com estas características: ${fatos}` : ""}${gravados ? `. Gravações legíveis no item: ${gravados}` : ""}? Vários modelos podem ter as mesmas medidas, então liste os possíveis; para cada um, informe os códigos equivalentes de outras marcas, as aplicações (veículos e anos) e a faixa de preço do mesmo formato. Responda em no máximo 12 linhas e cite as fontes.`;
+  // Códigos gravados que não são número de peça (lote, composto, "desconhecido") NÃO entram na pergunta:
+  // o modelo os trata como pista e se perde. Só marca + medidas + fatos do vendedor.
+  return `Pesquise na web: quais números de peça do fabricante correspondem a ${item}${fatos ? `, com estas características: ${fatos}` : ""}? Vários modelos podem ter as mesmas medidas, então liste os possíveis; para cada um, informe os códigos equivalentes de outras marcas, as aplicações (veículos e anos) e a faixa de preço do mesmo formato. Responda em no máximo 12 linhas e cite as fontes.`;
 }
 
 /** Etapa B (sem busca): transforma a resposta da pesquisa no formato do app. */
