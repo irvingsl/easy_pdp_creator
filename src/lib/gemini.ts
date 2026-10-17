@@ -96,7 +96,8 @@ o que é, com a maior precisão que as evidências permitirem, sem inventar.
    veículo/modelo de aplicação antes de observar. Se as fotos mostram mais de um componente, é kit ou
    conjunto: liste os componentes.
 3. "Não sei" é uma boa resposta. Use null ou lista vazia e explique em "duvidas" o que falta. Nunca invente
-   códigos, medidas, marcas, aplicações nem preços.
+   códigos, medidas, marcas, aplicações nem preços. Isso vale também para o texto da análise: não sugira
+   veículos, aplicações ou usos típicos sem uma fonte pesquisada.
 4. Medidas e contagens podem vir da foto, desde que você diga como chegou nelas (ex.: "contei N na foto 3")
    e o grau de confiança (alta, média, baixa). Se a imagem não permite medir ou contar com segurança, use null.
 
