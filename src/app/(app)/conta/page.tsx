@@ -12,13 +12,19 @@ type CatAttr = { id: string; name: string; value_type?: string; tags?: Record<st
 const attr = (p: Prod, id: string) => p.attributes?.find((a) => a.id === id)?.value_name ?? "";
 const raw = (b: unknown, n = 2500) => JSON.stringify(b, null, 2)?.slice(0, n);
 
-/** Variações comuns de escrita do mesmo número de peça. */
+/** Variações comuns de escrita de cada número de peça que aparecer na busca. */
 function variants(q: string): string[] {
-  const digits = q.replace(/[^0-9a-z]/gi, "");
-  const set = new Set([q, digits]);
-  if (/^\d{9}$/.test(digits)) {
-    set.add(`${digits.slice(0, 3)} ${digits.slice(3, 7)} ${digits.slice(7)}`);
-    set.add(`${digits}0`);
+  const set = new Set<string>();
+  const tokens = q.split(/\s+/).filter((t) => t.replace(/\D/g, "").length >= 6);
+  if (!tokens.length) return [q];
+  for (const t of tokens) {
+    const d = t.replace(/[^0-9a-z]/gi, "");
+    set.add(d);
+    if (/^\d{9}$/.test(d)) {
+      set.add(`${d.slice(0, 3)} ${d.slice(3, 7)} ${d.slice(7)}`);
+      set.add(`${d}0`);
+    }
+    if (/^\d{10}$/.test(d)) set.add(`${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7)}`);
   }
   return [...set];
 }
@@ -85,6 +91,7 @@ export default async function ContaPage(props: PageProps<"/conta">) {
       {conta && (
         <section className="flex flex-col gap-5">
           <h2 className="font-medium">Teste da API (spike)</h2>
+          <a href="/conta/validar" className="text-sm underline">Validar um anúncio de teste (sem publicar) →</a>
           <form className="flex flex-col gap-2">
             <div className="flex gap-2">
               <input name="q" defaultValue={q} placeholder="código OEM ou palavras-chave" className={inputBase} />
