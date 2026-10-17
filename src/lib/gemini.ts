@@ -1,4 +1,4 @@
-const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
 export type PartAnalysis = {
   tipo_peca: string | null;
