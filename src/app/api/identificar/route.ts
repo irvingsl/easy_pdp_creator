@@ -161,6 +161,9 @@ export async function POST(request: NextRequest) {
       }
     }
     const a = p.analysis;
+    // Dado vindo só da pesquisa e sem link da fonte não é verificável: não pode constar como confiança alta
+    a.codigos = (a.codigos ?? []).map((c) => (c.origem === "inferido_pela_pesquisa" && !c.fonte_url && c.confianca === "alta" ? { ...c, confianca: "baixa" } : c));
+    a.caracteristicas = (a.caracteristicas ?? []).map((c) => (c.origem === "fonte_web" && c.confianca === "alta" ? { ...c, confianca: "media" } : c));
     // Só números de peça e equivalentes; códigos de processo (lote, data...) não vão ao catálogo
     const codes = [
       ...new Set(

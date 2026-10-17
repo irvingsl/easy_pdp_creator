@@ -10,6 +10,9 @@ export type CatalogHit = {
   queryType: string | null;
   total: number;
   exact: boolean;
+  /** status HTTP e variantes tentadas, para diagnosticar buscas sem resultado */
+  status?: number;
+  variantes?: string[];
   /** o produto achado é do mesmo tipo de peça que a IA identificou (evita falsos positivos) */
   relevante?: boolean;
   ignorado?: string;
@@ -27,6 +30,7 @@ async function buscar(token: string, code: string): Promise<CatalogHit> {
   const exact = b?.query_type === "PART_NUMBER";
   return {
     code,
+    status: r.status,
     queryType: b?.query_type ?? null,
     total: b?.paging?.total ?? 0,
     exact,
@@ -49,8 +53,8 @@ export async function lookupPartNumber(token: string, code: string): Promise<Cat
   let ultimo: CatalogHit | null = null;
   for (const v of variantes(code)) {
     const hit = await buscar(token, v);
-    if (hit.exact) return { ...hit, code };
+    if (hit.exact) return { ...hit, code, variantes: variantes(code) };
     ultimo = hit;
   }
-  return { ...(ultimo as CatalogHit), code };
+  return { ...(ultimo as CatalogHit), code, variantes: variantes(code) };
 }
