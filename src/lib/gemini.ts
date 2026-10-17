@@ -1,6 +1,6 @@
 const API = "https://generativelanguage.googleapis.com/v1beta";
 /** Preferidos, na ordem; depois completamos com o que a própria chave enxerga. */
-const PREFERRED = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
+const PREFERRED = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.8-flash", "gemini-3.8-flash-lite"];
 const MAX_MODELS = 6;
 let lastGood: string | null = null;
 
