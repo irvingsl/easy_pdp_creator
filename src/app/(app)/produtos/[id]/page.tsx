@@ -6,6 +6,8 @@ import { DeleteProdutoButton } from "@/components/delete-produto-button";
 import { ProdutoFotos, type FotoView } from "@/components/produto-fotos";
 import { IdentificarIA, type Identificacao } from "@/components/identificar-ia";
 import { DadosConfirmadosForm } from "@/components/dados-confirmados";
+import { RascunhoAnuncio } from "@/components/rascunho-anuncio";
+import type { Rascunho } from "@/domain/rascunho";
 import type { DadosConfirmados } from "@/domain/dados-confirmados";
 
 export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
@@ -14,7 +16,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
 
   const { data: produto } = await supabase
     .from("produtos")
-    .select("id, user_id, sku, identificacao, dados_confirmados, oem_code, titulo_base, estoque, status, criado_em, produto_fotos(id, path_original, path_processada, status_processamento, ordem, manter_original)")
+    .select("id, user_id, sku, identificacao, rascunho, dados_confirmados, oem_code, titulo_base, estoque, status, criado_em, produto_fotos(id, path_original, path_processada, status_processamento, ordem, manter_original)")
     .eq("id", id)
     .maybeSingle();
   if (!produto) notFound();
@@ -38,6 +40,8 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
       <DadosConfirmadosForm produtoId={produto.id} oemCode={produto.oem_code} inicial={(produto.dados_confirmados as DadosConfirmados) ?? {}} />
 
       <IdentificarIA produtoId={produto.id} inicial={(produto.identificacao as Identificacao | null) ?? null} />
+
+      <RascunhoAnuncio produtoId={produto.id} inicial={(produto.rascunho as Rascunho | null) ?? null} />
 
       <ProdutoFotos
         produtoId={produto.id}

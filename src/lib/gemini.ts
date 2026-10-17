@@ -402,3 +402,47 @@ export async function organizarPesquisa(prev: PartAnalysis, notes: string | unde
   }
   return { status: 0, model, analysis: null as PartAnalysis | null };
 }
+
+/** Prompt do rascunho: texto próprio do vendedor, usando só os fatos informados. */
+function buildDraftPrompt(fatos: string) {
+  return `Você redige anúncios de marketplace brasileiro (Mercado Livre) para peças e acessórios automotivos.
+Com os FATOS abaixo, escreva um rascunho de anúncio em português do Brasil.
+
+Regras:
+1. Use somente os fatos informados. Não invente medida, compatibilidade, estado, garantia nem marca.
+2. Estilo próprio: claro, direto, honesto. Pode seguir a estrutura típica dos bons anúncios do segmento (peça, veículos com anos, número da peça, o que está incluso, avisos úteis), mas não copie frases de outros anúncios.
+3. "titulo": no máximo 60 caracteres, sem emojis nem palavras de marketing vazias; tipo da peça + marca + número da peça + principais veículos que couberem.
+4. "descricao": texto simples (sem HTML), em parágrafos curtos e listas com hífen: o que é, o que está incluso (unidade), características, número da peça, lista de compatibilidade e uma orientação para conferir o número/medidas antes de comprar. Não prometa nada que não está nos fatos.
+5. "compatibilidade": veículo com motor e anos, um por linha. Origem "confirmado" só se o vendedor informou; o que veio da web é "sugerido_web".
+6. "atributos": nome, valor e origem (confirmado, lido_no_item, contado_na_foto ou web), só com o que está nos fatos.
+7. "preco_faixa": só se houver faixa nos fatos, senão null. "preco": sempre null.
+8. "avisos": o que o vendedor ainda precisa informar ou conferir (ex.: condição do item, diâmetro não medido, aplicações sem fonte).
+
+Responda apenas com um bloco \`\`\`json no formato:
+{ "titulo": string, "descricao": string,
+  "compatibilidade": [{ "veiculo": string, "anos": string|null, "origem": "confirmado"|"sugerido_web" }],
+  "atributos": [{ "nome": string, "valor": string, "origem": "confirmado"|"lido_no_item"|"contado_na_foto"|"web" }],
+  "preco": null, "preco_faixa": { "minimo": number, "maximo": number }|null, "avisos": [string] }
+
+FATOS:
+${fatos}`;
+}
+
+export async function gerarRascunho(fatos: string, budget = BUDGET_MS) {
+  const t0 = Date.now();
+  for (const m of ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]) {
+    if (restante(t0, budget) < 8000) break;
+    const b = await callGemini(m, [{ text: buildDraftPrompt(fatos) }], false, 6144, Math.min(restante(t0, budget), 40000));
+    if (!b.res.ok) continue;
+    const texto = readGrounding(b.body, false).text;
+    const ini = texto.indexOf("{");
+    const fim = texto.lastIndexOf("}");
+    if (ini < 0 || fim < ini) continue;
+    try {
+      return { model: m, rascunho: JSON.parse(texto.slice(ini, fim + 1)) as Record<string, unknown> };
+    } catch {
+      continue;
+    }
+  }
+  return { model: null, rascunho: null };
+}
