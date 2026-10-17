@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { identifyPart, pesquisaFocada, type PartAnalysis } from "@/lib/gemini";
+import { identifyPart, organizarPesquisa, pesquisaWeb, type PartAnalysis } from "@/lib/gemini";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
 import { lookupPartNumber, type CatalogHit } from "@/marketplaces/mercadolivre/catalog";
 import { BUCKET_ORIGINAIS } from "@/domain/types";
@@ -44,6 +44,8 @@ type Parcial = {
   tentativas: { model: string; grounded: boolean; status: number }[];
   visao?: VisaoResult | null;
   perguntaPesquisa?: string;
+  textoPesquisa?: string;
+  erroPesquisa?: string;
 };
 
 /**
@@ -57,7 +59,7 @@ export async function POST(request: NextRequest) {
   const { produtoId, cego, etapa = "fotos", parcial } = (await request.json().catch(() => ({}))) as {
     produtoId?: string;
     cego?: boolean;
-    etapa?: "fotos" | "pesquisa" | "final";
+    etapa?: "fotos" | "pesquisa" | "organizar" | "final";
     parcial?: Parcial;
   };
   if (!produtoId) return NextResponse.json({ error: "produtoId obrigatório" }, { status: 400 });
@@ -112,23 +114,32 @@ export async function POST(request: NextRequest) {
     if (!parcial?.analysis) return NextResponse.json({ error: "faltam os dados da etapa anterior" }, { status: 400 });
 
     if (etapa === "pesquisa") {
-      const r = await pesquisaFocada(parcial.analysis, confirmados, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null));
+      const r = await pesquisaWeb(parcial.analysis, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null));
       const tentativas = [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
-      if (!("analysis" in r) || !r.pesquisou) {
-        return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: "erro" in r ? r.erro : undefined });
+      if (!("texto" in r)) {
+        return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: r.erro });
       }
       const out: Parcial = {
         ...parcial,
-        analysis: r.analysis ?? parcial.analysis,
-        narrativa: [parcial.narrativa, r.narrativa && `— Pesquisa na web —\n${r.narrativa}`].filter(Boolean).join("\n\n"),
+        narrativa: [parcial.narrativa, `— Pesquisa na web —\n${r.texto}`].filter(Boolean).join("\n\n"),
         sources: r.sources,
         consultas: r.consultas,
         pesquisou: true,
-        model: r.model ?? parcial.model,
+        model: r.model,
         perguntaPesquisa: r.pergunta,
+        textoPesquisa: r.texto,
         tentativas,
       };
       return NextResponse.json(out);
+    }
+
+    if (etapa === "organizar") {
+      // sem texto de pesquisa não há o que organizar: segue com a análise das fotos
+      if (!parcial.textoPesquisa) return NextResponse.json(parcial);
+      const r = await organizarPesquisa(parcial.analysis, confirmados, parcial.textoPesquisa, parcial.model);
+      const { textoPesquisa: _omit, ...resto } = parcial;
+      void _omit;
+      return NextResponse.json({ ...resto, analysis: r.analysis ?? parcial.analysis, tentativas: [...parcial.tentativas, { model: parcial.model, grounded: false, status: r.status }] });
     }
 
     // etapa "final": conferência no catálogo do ML, certeza e gravação

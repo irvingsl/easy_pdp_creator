@@ -338,11 +338,8 @@ export async function identifyPart(
   throw new Error(`${lastError} | tentativas: ${tentativas.map((t) => `${t.model}${t.grounded ? "+web" : ""}=${t.status}`).join(", ")}. Veja https://ai.dev/rate-limit`);
 }
 
-/**
- * 2ª etapa, em duas chamadas: A) só a pergunta, com busca na web (é o formato que faz o Gemini pesquisar);
- * B) sem busca, organiza a resposta no formato do app.
- */
-export async function pesquisaFocada(prev: PartAnalysis, notes: string | undefined, model: string, conf?: DadosConfirmados | null) {
+/** Etapa de pesquisa (uma chamada): só a pergunta, com busca na web; tenta outros modelos se um falhar. */
+export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: DadosConfirmados | null) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Defina GEMINI_API_KEY");
   const pergunta = perguntaDePesquisa(prev, conf);
@@ -360,20 +357,14 @@ export async function pesquisaFocada(prev: PartAnalysis, notes: string | undefin
       ultimo = { status: a.res.status, erro: `${m}: respondeu sem pesquisar`, pergunta };
       continue;
     }
-    // B: organiza a resposta da pesquisa; se falhar, mantém a análise das fotos e mostra o texto da pesquisa
-    let analysis: PartAnalysis | null = null;
-    const b = await callGemini(m, [{ text: buildFormatPrompt(prev, notes, ga.text) }], false, 6144);
-    if (b.res.ok) analysis = splitResponse(readGrounding(b.body, false).text).analysis;
-    return {
-      status: a.res.status,
-      model: m,
-      pergunta,
-      analysis,
-      narrativa: ga.text.trim(),
-      sources: ga.sources,
-      consultas: ga.consultas,
-      pesquisou: true as const,
-    };
+    return { status: a.res.status, model: m, pergunta, texto: ga.text.trim(), sources: ga.sources, consultas: ga.consultas, pesquisou: true as const };
   }
   return ultimo;
+}
+
+/** Etapa de organização (outra chamada, sem busca): transforma o texto da pesquisa no formato do app. */
+export async function organizarPesquisa(prev: PartAnalysis, notes: string | undefined, texto: string, model: string) {
+  const b = await callGemini(model, [{ text: buildFormatPrompt(prev, notes, texto) }], false, 6144);
+  if (!b.res.ok) return { status: b.res.status, analysis: null as PartAnalysis | null };
+  return { status: b.res.status, analysis: splitResponse(readGrounding(b.body, false).text).analysis };
 }

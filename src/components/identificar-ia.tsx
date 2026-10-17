@@ -82,11 +82,15 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
     setBusy(true);
     setError("");
     try {
-      setFase("1/3 Lendo as fotos...");
+      setFase("1/4 Lendo as fotos...");
       let parcial = await etapa("fotos", { produtoId, cego, etapa: "fotos" });
-      setFase("2/3 Pesquisando na web...");
+      setFase("2/4 Pesquisando na web...");
       parcial = await etapa("pesquisa", { produtoId, cego, etapa: "pesquisa", parcial });
-      setFase("3/3 Conferindo no catálogo do Mercado Livre...");
+      if (parcial.pesquisou) {
+        setFase("3/4 Organizando os resultados...");
+        parcial = await etapa("organizar", { produtoId, cego, etapa: "organizar", parcial });
+      }
+      setFase("4/4 Conferindo no catálogo do Mercado Livre...");
       const final = await etapa("final", { produtoId, cego, etapa: "final", parcial });
       setRes(final as unknown as Identificacao);
     } catch (e) {
