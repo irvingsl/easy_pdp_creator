@@ -165,6 +165,17 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
 
           <div className="flex flex-col gap-2 text-sm">
             <span className="font-medium">Compatibilidade ({r.compatibilidade.length})</span>
+            {r.compatibilidade.some((c) => c.origem !== "confirmado") && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                <span>{r.compatibilidade.filter((c) => c.origem !== "confirmado").length} item(ns) sugerido(s) pela web, sem confirmação (a publicação fica bloqueada).</span>
+                <button type="button" className="underline" onClick={() => set("compatibilidade", r.compatibilidade.map((c) => ({ ...c, origem: "confirmado" })))}>
+                  Confirmar todas
+                </button>
+                <button type="button" className="underline" onClick={() => set("compatibilidade", r.compatibilidade.filter((c) => c.origem === "confirmado"))}>
+                  Remover as não confirmadas
+                </button>
+              </div>
+            )}
             {r.compatibilidade.map((c, i) => (
               <div key={i} className="flex items-center gap-2">
                 <span className="flex-1">{c.veiculo}{c.anos ? ` ${c.anos}` : ""}</span>
