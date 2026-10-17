@@ -16,13 +16,20 @@ const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").t
 const keyword = (tipo: string | null) => norm(tipo ?? "").split(/[^a-z0-9]+/).filter((w) => w.length >= 5).sort((a, b) => b.length - a.length)[0];
 const significant = (code: string) => code.replace(/[^0-9a-z]/gi, "").length >= 6;
 
-function certainty(sources: number, catalogHits: number, mainFound: boolean, imagePages = 0) {
+/**
+ * Existir no catálogo do ML só prova que o número EXISTE, não que é o do item. A certeza só sobe quando o
+ * número principal está gravado no item ou confirmado pelo vendedor (é o único que a IA pode pôr em
+ * "numero_peca_principal"); números inferidos pela pesquisa ficam como candidatos.
+ */
+function certainty(sources: number, candidatos: number, principal: boolean, mainFound: boolean, imagePages = 0) {
   const reasons: string[] = [];
-  if (mainFound) reasons.push("O número principal existe no catálogo do Mercado Livre");
-  else if (catalogHits) reasons.push(`${catalogHits} número(s) equivalente(s) existem no catálogo do Mercado Livre`);
+  if (principal && mainFound) reasons.push("O número de peça gravado/confirmado existe no catálogo do Mercado Livre");
+  else if (principal) reasons.push("Número de peça gravado/confirmado, mas não localizado no catálogo do Mercado Livre");
+  else if (candidatos) reasons.push(`${candidatos} candidato(s) inferido(s) pela pesquisa: vários modelos podem ter as mesmas medidas, confirme com o item`);
+  else reasons.push("Nenhum número de peça identificado");
   if (sources) reasons.push(`${sources} fonte(s) da web consultada(s) pela IA`);
   if (imagePages) reasons.push(`${imagePages} página(s) com imagens parecidas na busca por imagem do Google`);
-  const level = (mainFound && sources >= 1) || (catalogHits >= 1 && sources >= 2) ? "alta" : mainFound || catalogHits || sources >= 2 ? "média" : "baixa";
+  const level = principal && mainFound ? "alta" : principal ? "média" : "baixa";
   return { level, reasons };
 }
 
@@ -105,7 +112,7 @@ export async function POST(request: NextRequest) {
     if (!parcial?.analysis) return NextResponse.json({ error: "faltam os dados da etapa anterior" }, { status: 400 });
 
     if (etapa === "pesquisa") {
-      const r = await pesquisaFocada(parcial.analysis, confirmados, parcial.model);
+      const r = await pesquisaFocada(parcial.analysis, confirmados, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null));
       const tentativas = [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
       if (!("analysis" in r) || !r.pesquisou) {
         return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: "erro" in r ? r.erro : undefined });
@@ -131,10 +138,11 @@ export async function POST(request: NextRequest) {
       ...new Set(
         [
           a.numero_peca_principal,
+          ...(a.candidatos ?? []).map((c) => c.numero_de_peca),
           ...(a.codigos ?? []).filter((c) => c.classe === "numero_de_peca" || c.classe === "equivalente").map((c) => c.codigo),
         ].filter((c): c is string => !!c && significant(c)),
       ),
-    ].slice(0, 6);
+    ].slice(0, 8);
     let catalog: CatalogHit[] = [];
     const token = await getAccessToken(supabase);
     if (token) catalog = await Promise.all(codes.map((c) => lookupPartNumber(token, c.replace(/\s+/g, ""))));
@@ -154,7 +162,7 @@ export async function POST(request: NextRequest) {
       cego: !!cego,
       sources: parcial.sources,
       catalog,
-      certeza: certainty(parcial.sources.length, catalog.filter((c) => c.relevante).length, mainFound, parcial.visao?.paginas.length ?? 0),
+      certeza: certainty(parcial.sources.length, a.candidatos?.length ?? 0, !!a.numero_peca_principal, mainFound, parcial.visao?.paginas.length ?? 0),
       model: parcial.model,
       buscaWeb: parcial.pesquisou,
       consultas: parcial.consultas,

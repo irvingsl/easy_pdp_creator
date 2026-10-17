@@ -215,6 +215,35 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
             </details>
           )}
 
+          {a.candidatos && a.candidatos.length > 0 && (
+            <div>
+              <h3 className="font-medium">Candidatos a número de peça</h3>
+              <p className="text-xs text-gray-500">Inferidos pela pesquisa; mais de um modelo pode ter as mesmas medidas. Confirme com o item na mão.</p>
+              <ul className="mt-2 flex flex-col gap-3">
+                {a.candidatos.map((c) => {
+                  const noCatalogo = res.catalog.find((k) => k.relevante && k.code === c.numero_de_peca.replace(/\s+/g, ""));
+                  return (
+                    <li key={c.numero_de_peca} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono font-medium">{c.numero_de_peca}</span>
+                        {c.marca && <span className="text-gray-500">· {c.marca}</span>}
+                        {noCatalogo && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-300">existe no catálogo do ML</span>}
+                        <button onClick={() => usarComoOem(c.numero_de_peca)} className="ml-auto rounded-md border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">
+                          É este
+                        </button>
+                      </div>
+                      <p className="text-gray-700 dark:text-gray-300">{c.descricao}</p>
+                      {c.aplicacoes?.length > 0 && <p className="text-gray-500">Aplicações: {c.aplicacoes.join("; ")}</p>}
+                      {c.combina?.length > 0 && <p className="text-green-700 dark:text-green-400">Combina: {c.combina.join("; ")}</p>}
+                      {c.nao_confirmado?.length > 0 && <p className="text-amber-700 dark:text-amber-400">Não confirmado: {c.nao_confirmado.join("; ")}</p>}
+                      {c.como_confirmar && <p className="text-gray-600 dark:text-gray-400">Para confirmar: {c.como_confirmar}</p>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
           {a.textos_gravados?.length > 0 && (
             <div>
               <h3 className="font-medium">Lido no item</h3>

@@ -1,3 +1,5 @@
+import type { DadosConfirmados } from "@/domain/dados-confirmados";
+
 const API = "https://generativelanguage.googleapis.com/v1beta";
 /** Preferidos, na ordem; depois completamos com o que a própria chave enxerga. */
 const PREFERRED = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"];
@@ -21,6 +23,16 @@ export type PartAnalysis = {
     fonte_url: string | null;
   }[];
   numero_peca_principal: string | null;
+  candidatos?: {
+    numero_de_peca: string;
+    marca: string | null;
+    descricao: string;
+    aplicacoes: string[];
+    combina: string[];
+    nao_confirmado: string[];
+    como_confirmar: string;
+    fontes: string[];
+  }[];
   caracteristicas: {
     nome: string;
     valor: string;
@@ -69,8 +81,11 @@ const SCHEMA = `{
   "marca": { "valor": string|null, "origem": "gravado"|"visivel"|"fonte_web"|"suposicao", "confianca": "alta"|"media"|"baixa" },
   "textos_gravados": [{ "texto": string, "foto": number, "legibilidade": "boa"|"parcial"|"ruim" }],
   "codigos": [{ "codigo": string, "classe": "numero_de_peca"|"equivalente"|"processo"|"desconhecido",
-                "marca": string|null, "origem": string, "confianca": "alta"|"media"|"baixa", "fonte_url": string|null }],
+                "marca": string|null, "origem": "gravado_no_item"|"inferido_pela_pesquisa"|"confirmado_pelo_vendedor",
+                "confianca": "alta"|"media"|"baixa", "fonte_url": string|null }],
   "numero_peca_principal": string|null,
+  "candidatos": [{ "numero_de_peca": string, "marca": string|null, "descricao": string, "aplicacoes": string[],
+                   "combina": string[], "nao_confirmado": string[], "como_confirmar": string, "fontes": string[] }],
   "caracteristicas": [{ "nome": string, "valor": string, "unidade": string|null,
                         "origem": "contado_na_foto"|"estimado_na_foto"|"fonte_web"|"confirmado_pelo_vendedor", "como": string, "confianca": "alta"|"media"|"baixa" }],
   "aplicacoes": [{ "descricao": string, "anos": string|null, "origem": "fonte_web"|"suposicao", "fonte_url": string|null }],
@@ -100,6 +115,13 @@ o que é, com a maior precisão que as evidências permitirem, sem inventar.
    veículos, aplicações ou usos típicos sem uma fonte pesquisada.
 4. Medidas e contagens podem vir da foto, desde que você diga como chegou nelas (ex.: "contei N na foto 3")
    e o grau de confiança (alta, média, baixa). Se a imagem não permite medir ou contar com segurança, use null.
+5. Número de peça: só vai em "numero_peca_principal" se estiver gravado e legível no item ou confirmado pelo
+   vendedor. Um número descoberto na pesquisa a partir de características (medidas, contagens...) é apenas
+   CANDIDATO: vários modelos compartilham as mesmas medidas. Liste até 5 candidatos, com o que combina, o que
+   não foi confirmado e qual medida ou foto adicional distingue entre eles. Aplicações pertencem a cada
+   candidato, não ao item, enquanto o número não estiver confirmado.
+6. Leituras parciais ou duvidosas não são evidência: não interprete siglas ou textos parcialmente legíveis
+   como se tivessem significado técnico, e não as use como pistas de pesquisa.
 
 ## Como proceder
 Passo 1 - Observar. Descreva o que vê: tipo de item, formato (unidade, kit, par, conjunto), componentes
@@ -235,19 +257,27 @@ function readGrounding(body: { candidates?: { content?: { parts?: { text?: strin
   return { text, sources, consultas, pesquisou: grounded && (sources.length > 0 || consultas.length > 0) };
 }
 
-/** Pergunta direta (como no teste que sempre fez o Gemini pesquisar), montada só com o que se sabe do item. */
-function perguntaDePesquisa(prev: PartAnalysis, notes: string | undefined): string {
-  const carac = (prev.caracteristicas ?? [])
-    .filter((c) => c.confianca !== "baixa" && c.origem !== "estimado_na_foto")
-    .map((c) => `${c.nome} ${c.valor}${c.unidade ? ` ${c.unidade}` : ""}`);
+/** Pergunta direta (formato que faz o Gemini pesquisar), montada só com fatos sólidos. */
+function perguntaDePesquisa(prev: PartAnalysis, conf: DadosConfirmados | null | undefined): string {
+  const fmt = (c: { nome: string; valor: string; unidade?: string | null }) => `${c.nome} ${c.valor}${c.unidade ? ` ${c.unidade}` : ""}`;
+  const doVendedor = (conf?.caracteristicas ?? []).map(fmt);
+  const daFoto = (prev.caracteristicas ?? [])
+    .filter((c) => c.confianca !== "baixa" && c.origem !== "estimado_na_foto" && c.origem !== "confirmado_pelo_vendedor")
+    .map(fmt);
+  const extras = [
+    conf?.numero_peca ? `número de peça gravado no item: ${conf.numero_peca}` : "",
+    conf?.veiculo ? `veículo/aplicação: ${conf.veiculo}` : "",
+  ].filter(Boolean);
+  const fatos = [...doVendedor, ...daFoto, ...extras].join("; ");
+  const marca = conf?.marca || prev.marca?.valor;
   const item = [
     prev.tipo_item ?? "um item",
-    prev.marca?.valor ? `da marca ${prev.marca.valor}` : "",
+    marca ? `da marca ${marca}` : "",
     prev.formato_de_venda && prev.formato_de_venda !== "indefinido" ? `(${prev.formato_de_venda})` : "",
   ].filter(Boolean).join(" ");
-  const fatos = [...carac, ...(notes ? [notes.replace(/^Fatos confirmados[^\n]*\n- /, "").replace(/\n- /g, "; ")] : [])].filter(Boolean).join("; ");
-  const gravados = (prev.textos_gravados ?? []).map((t) => t.texto).join(", ");
-  return `Pesquise na web: qual é o número de peça do fabricante, os códigos equivalentes de outras marcas e as aplicações (veículos e anos) de ${item}${fatos ? `, com estas características: ${fatos}` : ""}${gravados ? `. Gravações visíveis no item: ${gravados}` : ""}? Informe também a faixa de preço do mesmo formato. Responda em no máximo 10 linhas e cite as fontes.`;
+  // só leituras boas entram na pergunta; texto parcialmente legível não é pista
+  const gravados = (prev.textos_gravados ?? []).filter((t) => t.legibilidade === "boa").map((t) => t.texto).join(", ");
+  return `Pesquise na web: quais números de peça do fabricante correspondem a ${item}${fatos ? `, com estas características: ${fatos}` : ""}${gravados ? `. Gravações legíveis no item: ${gravados}` : ""}? Vários modelos podem ter as mesmas medidas, então liste os possíveis; para cada um, informe os códigos equivalentes de outras marcas, as aplicações (veículos e anos) e a faixa de preço do mesmo formato. Responda em no máximo 12 linhas e cite as fontes.`;
 }
 
 /** Etapa B (sem busca): transforma a resposta da pesquisa no formato do app. */
@@ -262,6 +292,7 @@ ${pesquisa}
 """
 
 Atualize o JSON da análise com o que a pesquisa trouxe, mantendo o que as fotos já mostravam. Regras: use só o que está no resultado da pesquisa, com a URL de cada informação quando houver; se a pesquisa não encontrou algo, use null; se as fontes divergirem, mostre as duas versões; os fatos confirmados pelo vendedor prevalecem sobre qualquer fonte; diferencie o número de peça do item do número de um kit ou conjunto; nunca invente preço nem URL.
+Números vindos da pesquisa são CANDIDATOS: preencha "candidatos" (até 5) com o que combina, o que não foi confirmado e como confirmar (qual medida ou foto distingue). Só preencha "numero_peca_principal" se o número estiver gravado e legível no item ou confirmado pelo vendedor; caso contrário, deixe null. Aplicações ficam dentro de cada candidato.
 
 Responda SOMENTE com o JSON, dentro de um bloco \`\`\`json, neste formato:
 ${SCHEMA}`;
@@ -311,10 +342,10 @@ export async function identifyPart(
  * 2ª etapa, em duas chamadas: A) só a pergunta, com busca na web (é o formato que faz o Gemini pesquisar);
  * B) sem busca, organiza a resposta no formato do app.
  */
-export async function pesquisaFocada(prev: PartAnalysis, notes: string | undefined, model: string) {
+export async function pesquisaFocada(prev: PartAnalysis, notes: string | undefined, model: string, conf?: DadosConfirmados | null) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Defina GEMINI_API_KEY");
-  const pergunta = perguntaDePesquisa(prev, notes);
+  const pergunta = perguntaDePesquisa(prev, conf);
   const outros = (await candidateModels(key)).filter((m) => m !== model);
   let ultimo: { status: number; erro: string; pergunta: string } = { status: 0, erro: "", pergunta };
 
