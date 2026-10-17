@@ -36,6 +36,7 @@ type Parcial = {
   grounded?: boolean;
   tentativas: { model: string; grounded: boolean; status: number }[];
   visao?: VisaoResult | null;
+  perguntaPesquisa?: string;
 };
 
 /**
@@ -106,7 +107,9 @@ export async function POST(request: NextRequest) {
     if (etapa === "pesquisa") {
       const r = await pesquisaFocada(parcial.analysis, confirmados, parcial.model);
       const tentativas = [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
-      if (!("analysis" in r) || !r.pesquisou) return NextResponse.json({ ...parcial, tentativas });
+      if (!("analysis" in r) || !r.pesquisou) {
+        return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: "erro" in r ? r.erro : undefined });
+      }
       const out: Parcial = {
         ...parcial,
         analysis: r.analysis ?? parcial.analysis,
@@ -115,6 +118,7 @@ export async function POST(request: NextRequest) {
         consultas: r.consultas,
         pesquisou: true,
         model: r.model ?? parcial.model,
+        perguntaPesquisa: r.pergunta,
         tentativas,
       };
       return NextResponse.json(out);
@@ -154,6 +158,8 @@ export async function POST(request: NextRequest) {
       model: parcial.model,
       buscaWeb: parcial.pesquisou,
       consultas: parcial.consultas,
+      perguntaPesquisa: parcial.perguntaPesquisa,
+      erroPesquisa: (parcial as Parcial & { erroPesquisa?: string }).erroPesquisa,
       tentativas: parcial.tentativas,
       geradoEm: new Date().toISOString(),
     };

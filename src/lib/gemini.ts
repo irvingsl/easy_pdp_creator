@@ -72,7 +72,7 @@ const SCHEMA = `{
                 "marca": string|null, "origem": string, "confianca": "alta"|"media"|"baixa", "fonte_url": string|null }],
   "numero_peca_principal": string|null,
   "caracteristicas": [{ "nome": string, "valor": string, "unidade": string|null,
-                        "origem": "contado_na_foto"|"estimado_na_foto"|"fonte_web", "como": string, "confianca": "alta"|"media"|"baixa" }],
+                        "origem": "contado_na_foto"|"estimado_na_foto"|"fonte_web"|"confirmado_pelo_vendedor", "como": string, "confianca": "alta"|"media"|"baixa" }],
   "aplicacoes": [{ "descricao": string, "anos": string|null, "origem": "fonte_web"|"suposicao", "fonte_url": string|null }],
   "preco": { "minimo": number|null, "maximo": number|null, "formato_de_referencia": string|null,
              "condicao": "novo"|"usado"|null, "fontes": string[], "observacao": string|null },
@@ -205,7 +205,7 @@ async function candidateModels(key: string): Promise<string[]> {
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
-async function callGemini(model: string, parts: Part[], grounded: boolean) {
+async function callGemini(model: string, parts: Part[], grounded: boolean, maxOutputTokens = 8192) {
   const key = process.env.GEMINI_API_KEY!;
   const res = await fetch(`${API}/models/${model}:generateContent`, {
     method: "POST",
@@ -213,7 +213,7 @@ async function callGemini(model: string, parts: Part[], grounded: boolean) {
     body: JSON.stringify({
       contents: [{ role: "user", parts }],
       ...(grounded ? { tools: [{ google_search: {} }] } : {}),
-      generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
+      generationConfig: { temperature: 0.2, maxOutputTokens },
     }),
   });
   const body = await res.json().catch(() => null);
@@ -247,19 +247,23 @@ function perguntaDePesquisa(prev: PartAnalysis, notes: string | undefined): stri
   ].filter(Boolean).join(" ");
   const fatos = [...carac, ...(notes ? [notes.replace(/^Fatos confirmados[^\n]*\n- /, "").replace(/\n- /g, "; ")] : [])].filter(Boolean).join("; ");
   const gravados = (prev.textos_gravados ?? []).map((t) => t.texto).join(", ");
-  return `Pesquise na web: qual é o número de peça do fabricante, os códigos equivalentes de outras marcas e as aplicações (veículos e anos) de ${item}${fatos ? `, com estas características: ${fatos}` : ""}${gravados ? `. Gravações visíveis no item: ${gravados}` : ""}? Informe também a faixa de preço do mesmo formato, e cite as fontes.`;
+  return `Pesquise na web: qual é o número de peça do fabricante, os códigos equivalentes de outras marcas e as aplicações (veículos e anos) de ${item}${fatos ? `, com estas características: ${fatos}` : ""}${gravados ? `. Gravações visíveis no item: ${gravados}` : ""}? Informe também a faixa de preço do mesmo formato. Responda em no máximo 10 linhas e cite as fontes.`;
 }
 
-/** Pesquisa focada: a pergunta vem primeiro, curta; o resto são regras e o formato. */
-function buildResearchPrompt(prev: PartAnalysis, notes: string | undefined, context = process.env.IDENTIFICACAO_CONTEXTO ?? DEFAULT_CONTEXT) {
-  return `${perguntaDePesquisa(prev, notes)}
+/** Etapa B (sem busca): transforma a resposta da pesquisa no formato do app. */
+function buildFormatPrompt(prev: PartAnalysis, notes: string | undefined, pesquisa: string) {
+  return `Um item foi analisado pelas fotos e depois pesquisado na web.
 
-Contexto do negócio: ${context}.
-Já sabemos, pela análise das fotos (JSON): ${JSON.stringify(prev)}
+Análise das fotos (JSON): ${JSON.stringify(prev)}
 ${notes ? `\n${notes}\n` : ""}
-Regras: use só o que encontrou nas páginas pesquisadas e cite a URL de cada informação; nunca cite uma URL que você não obteve nem estime preço de memória (nesse caso, null); se não encontrar, diga que não encontrou; se as fontes divergirem, mostre as duas versões; os fatos confirmados pelo vendedor prevalecem sobre qualquer fonte; diferencie o número de peça do item do número de um kit ou conjunto.
+Resultado da pesquisa na web:
+"""
+${pesquisa}
+"""
 
-Depois de pesquisar, responda com uma análise curta (até 12 linhas) e, ao final, o JSON completo ATUALIZADO (mantendo o que a análise das fotos já tinha e acrescentando o que a pesquisa trouxe) dentro de um bloco \`\`\`json, neste formato:
+Atualize o JSON da análise com o que a pesquisa trouxe, mantendo o que as fotos já mostravam. Regras: use só o que está no resultado da pesquisa, com a URL de cada informação quando houver; se a pesquisa não encontrou algo, use null; se as fontes divergirem, mostre as duas versões; os fatos confirmados pelo vendedor prevalecem sobre qualquer fonte; diferencie o número de peça do item do número de um kit ou conjunto; nunca invente preço nem URL.
+
+Responda SOMENTE com o JSON, dentro de um bloco \`\`\`json, neste formato:
 ${SCHEMA}`;
 }
 
@@ -303,21 +307,42 @@ export async function identifyPart(
   throw new Error(`${lastError} | tentativas: ${tentativas.map((t) => `${t.model}${t.grounded ? "+web" : ""}=${t.status}`).join(", ")}. Veja https://ai.dev/rate-limit`);
 }
 
-/** 2ª etapa (chamada separada, para caber no tempo da função): pesquisa curta e focada na web. */
+/**
+ * 2ª etapa, em duas chamadas: A) só a pergunta, com busca na web (é o formato que faz o Gemini pesquisar);
+ * B) sem busca, organiza a resposta no formato do app.
+ */
 export async function pesquisaFocada(prev: PartAnalysis, notes: string | undefined, model: string) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Defina GEMINI_API_KEY");
+  const pergunta = perguntaDePesquisa(prev, notes);
   const outros = (await candidateModels(key)).filter((m) => m !== model);
-  let ultimo: { status: number; erro: string } = { status: 0, erro: "" };
+  let ultimo: { status: number; erro: string; pergunta: string } = { status: 0, erro: "", pergunta };
+
   for (const m of [model, ...outros].slice(0, 3)) {
-    const { res, body } = await callGemini(m, [{ text: buildResearchPrompt(prev, notes) }], true);
-    if (!res.ok) {
-      ultimo = { status: res.status, erro: `${m}: ${JSON.stringify(body?.error ?? body).slice(0, 200)}` };
+    const a = await callGemini(m, [{ text: pergunta }], true, 2048);
+    if (!a.res.ok) {
+      ultimo = { status: a.res.status, erro: `${m}: ${JSON.stringify(a.body?.error ?? a.body).slice(0, 200)}`, pergunta };
       continue;
     }
-    const g = readGrounding(body, true);
-    const sp = splitResponse(g.text);
-    return { status: res.status, model: m, analysis: sp.analysis, narrativa: sp.narrativa, sources: g.sources, consultas: g.consultas, pesquisou: g.pesquisou };
+    const ga = readGrounding(a.body, true);
+    if (!ga.pesquisou) {
+      ultimo = { status: a.res.status, erro: `${m}: respondeu sem pesquisar`, pergunta };
+      continue;
+    }
+    // B: organiza a resposta da pesquisa; se falhar, mantém a análise das fotos e mostra o texto da pesquisa
+    let analysis: PartAnalysis | null = null;
+    const b = await callGemini(m, [{ text: buildFormatPrompt(prev, notes, ga.text) }], false, 6144);
+    if (b.res.ok) analysis = splitResponse(readGrounding(b.body, false).text).analysis;
+    return {
+      status: a.res.status,
+      model: m,
+      pergunta,
+      analysis,
+      narrativa: ga.text.trim(),
+      sources: ga.sources,
+      consultas: ga.consultas,
+      pesquisou: true as const,
+    };
   }
   return ultimo;
 }

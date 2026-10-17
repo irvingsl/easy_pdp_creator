@@ -20,6 +20,8 @@ export type Identificacao = {
   consultas?: string[];
   visao?: VisaoResult | null;
   cego?: boolean;
+  perguntaPesquisa?: string;
+  erroPesquisa?: string;
   tentativas?: { model: string; grounded: boolean; status: number }[];
   geradoEm: string;
 };
@@ -40,6 +42,7 @@ const ORIGEM: Record<string, string> = {
   contado_na_foto: "contado na foto",
   estimado_na_foto: "estimado na foto",
   fonte_web: "fonte na web",
+  confirmado_pelo_vendedor: "confirmado por você",
 };
 
 const money = (n: number | null) => (n == null ? "?" : `R$ ${n.toLocaleString("pt-BR")}`);
@@ -136,6 +139,7 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
           {res.buscaWeb === false && (
             <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
               Nenhuma pesquisa na web foi feita nesta resposta (cota indisponível ou a IA decidiu não pesquisar). Ela veio só das fotos, sem fontes: trate preço e aplicações como suposição.
+              {res.erroPesquisa && <span className="mt-1 block break-words text-xs">Motivo: {res.erroPesquisa}</span>}
               {res.tentativas && res.tentativas.length > 0 && (
                 <span className="mt-1 block font-mono text-xs">Tentativas: {res.tentativas.map((t) => `${t.model}${t.grounded ? "+web" : ""}=${t.status}`).join(", ")}</span>
               )}
@@ -194,6 +198,13 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
                   </li>
                 ))}
               </ul>
+            </details>
+          )}
+
+          {res.perguntaPesquisa && (
+            <details>
+              <summary className="cursor-pointer font-medium">Pergunta enviada à pesquisa</summary>
+              <p className="mt-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">{res.perguntaPesquisa}</p>
             </details>
           )}
 
