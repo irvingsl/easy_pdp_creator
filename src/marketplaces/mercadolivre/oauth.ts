@@ -51,3 +51,20 @@ export async function mlGet(path: string, accessToken: string) {
   const body = await res.json().catch(() => null);
   return { status: res.status, ok: res.ok, body };
 }
+
+export async function mlPost(path: string, accessToken: string, payload: unknown) {
+  const res = await fetch(`${API}${path}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+  const text = await res.text();
+  let body: unknown = text || null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    /* mantém o texto */
+  }
+  return { status: res.status, ok: res.ok, body };
+}

@@ -5,6 +5,7 @@ import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
 import { lookupPartNumber, type CatalogHit } from "@/marketplaces/mercadolivre/catalog";
 import { BUCKET_ORIGINAIS } from "@/domain/types";
 import { notasParaIA, type DadosConfirmados } from "@/domain/dados-confirmados";
+import { gravarUso, usoStore } from "@/lib/uso";
 import { buscaPorImagem, evidenciasParaIA, type VisaoResult } from "@/lib/vision";
 
 export const maxDuration = 60;
@@ -57,7 +58,9 @@ type Parcial = {
  *  "pesquisa" -> pesquisa focada, só se a 1ª etapa não pesquisou
  *  "final"    -> confere no catálogo do ML, calcula a certeza e salva
  */
-export async function POST(request: NextRequest) {
+export const POST = (request: NextRequest) => usoStore.run([], () => tratar(request));
+
+async function tratar(request: NextRequest) {
   const { produtoId, cego, etapa = "fotos", parcial } = (await request.json().catch(() => ({}))) as {
     produtoId?: string;
     cego?: boolean;
@@ -208,5 +211,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "falha" }, { status: 500 });
+  } finally {
+    await gravarUso(supabase, produtoId, `identificar:${etapa}`).catch(() => {});
   }
 }

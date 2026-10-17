@@ -1,0 +1,71 @@
+import { mlGet } from "./oauth";
+import type { Rascunho } from "@/domain/rascunho";
+import type { DadosConfirmados } from "@/domain/dados-confirmados";
+
+export type CategoriaSugerida = { id: string; nome: string; caminho: string };
+
+/** Categorias que o ML sugere para o texto (domain_discovery), com o caminho completo. */
+export async function sugerirCategorias(token: string, texto: string): Promise<CategoriaSugerida[]> {
+  const r = await mlGet(`/sites/MLB/domain_discovery/search?limit=4&q=${encodeURIComponent(texto)}`, token);
+  const lista = (Array.isArray(r.body) ? r.body : []) as { category_id: string; category_name: string }[];
+  return Promise.all(
+    lista.map(async (d) => {
+      const c = await mlGet(`/categories/${d.category_id}`, token);
+      const path = (c.body as { path_from_root?: { name: string }[] } | null)?.path_from_root;
+      return { id: d.category_id, nome: d.category_name, caminho: path?.map((p) => p.name).join(" > ") ?? d.category_name };
+    }),
+  );
+}
+
+type AtributoCategoria = { id: string; name: string; tags?: Record<string, boolean>; values?: { id: string; name: string }[] };
+
+export async function atributosDaCategoria(token: string, categoria: string): Promise<AtributoCategoria[]> {
+  const r = await mlGet(`/categories/${categoria}/attributes`, token);
+  return Array.isArray(r.body) ? (r.body as AtributoCategoria[]) : [];
+}
+
+const norm = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const achar = (r: Rascunho, ...nomes: string[]) => r.atributos.find((a) => nomes.some((n) => norm(a.nome).includes(n)))?.valor;
+
+/**
+ * Monta o corpo do anúncio (modelo "User Products": o ML monta o título a partir do family_name).
+ * Só entra o que o vendedor confirmou ou o item mostra; atributos obrigatórios que faltarem
+ * aparecem na resposta de /items/validate.
+ */
+export function montarAnuncio(opts: {
+  rascunho: Rascunho;
+  conf: DadosConfirmados | null;
+  oemCode: string | null;
+  categoria: string;
+  atributosCategoria: AtributoCategoria[];
+  fotos: string[];
+}) {
+  const { rascunho: r, conf, categoria, atributosCategoria } = opts;
+  const e = r.embalagem;
+  const attrs: { id: string; value_name?: string; value_id?: string }[] = [];
+  const marca = conf?.marca || achar(r, "marca");
+  const numero = conf?.numero_peca || opts.oemCode || achar(r, "numero");
+  if (marca) attrs.push({ id: "BRAND", value_name: marca });
+  if (numero) attrs.push({ id: "PART_NUMBER", value_name: numero });
+  const tipoVeiculo = atributosCategoria.find((a) => a.id === "VEHICLE_TYPE")?.values?.find((v) => /carro|caminhonete/.test(norm(v.name)));
+  if (tipoVeiculo) attrs.push({ id: "VEHICLE_TYPE", value_id: tipoVeiculo.id });
+  if (e) {
+    if (e.altura) attrs.push({ id: "PACKAGE_HEIGHT", value_name: `${e.altura} cm` });
+    if (e.largura) attrs.push({ id: "PACKAGE_WIDTH", value_name: `${e.largura} cm` });
+    if (e.comprimento) attrs.push({ id: "PACKAGE_LENGTH", value_name: `${e.comprimento} cm` });
+    if (e.peso) attrs.push({ id: "PACKAGE_WEIGHT", value_name: `${e.peso} g` });
+  }
+  return {
+    family_name: r.titulo,
+    category_id: categoria,
+    price: r.preco ?? 0,
+    currency_id: "BRL",
+    available_quantity: 1,
+    buying_mode: "buy_it_now",
+    condition: r.condicao ?? "used",
+    listing_type_id: "gold_special",
+    pictures: opts.fotos.map((source) => ({ source })),
+    attributes: attrs,
+    shipping: { mode: "me2", local_pick_up: false, free_shipping: false },
+  };
+}

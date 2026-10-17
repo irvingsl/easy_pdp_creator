@@ -7,6 +7,10 @@ export type Rascunho = {
   preco: number | null;
   preco_faixa: { minimo: number; maximo: number } | null;
   avisos: string[];
+  /** escolhas do vendedor para o Mercado Livre */
+  categoria_id?: string;
+  condicao?: "new" | "used";
+  embalagem?: { altura: string; largura: string; comprimento: string; peso: string };
   geradoEm?: string;
 };
 

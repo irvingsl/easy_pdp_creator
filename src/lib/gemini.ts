@@ -227,6 +227,8 @@ async function candidateModels(key: string): Promise<string[]> {
   return [...set].slice(0, MAX_MODELS);
 }
 
+import { registrarChamada } from "./uso";
+
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
 async function callGemini(model: string, parts: Part[], grounded: boolean, maxOutputTokens = 8192, timeoutMs = 45000) {
@@ -243,6 +245,15 @@ async function callGemini(model: string, parts: Part[], grounded: boolean, maxOu
       signal: AbortSignal.timeout(Math.max(3000, timeoutMs)),
     });
     const body = await res.json().catch(() => null);
+    const u = (body as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number }; candidates?: { groundingMetadata?: { webSearchQueries?: string[] } }[] } | null);
+    registrarChamada({
+      modelo: model,
+      grounded,
+      tokens_entrada: u?.usageMetadata?.promptTokenCount ?? null,
+      tokens_saida: (u?.usageMetadata?.candidatesTokenCount ?? 0) + (u?.usageMetadata?.thoughtsTokenCount ?? 0) || null,
+      buscas: u?.candidates?.[0]?.groundingMetadata?.webSearchQueries?.length ?? 0,
+      status: res.status,
+    });
     return { res, body };
   } catch (e) {
     // demora demais: devolve 408 para o chamador trocar de modelo, em vez de a função inteira estourar (504)

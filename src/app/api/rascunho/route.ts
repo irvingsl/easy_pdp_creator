@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { gerarRascunho, type PartAnalysis } from "@/lib/gemini";
 import { notasParaIA, type DadosConfirmados } from "@/domain/dados-confirmados";
+import { gravarUso, usoStore } from "@/lib/uso";
 import { TITULO_MAX, type Rascunho } from "@/domain/rascunho";
 
 export const maxDuration = 60;
@@ -25,7 +26,9 @@ function fatosDoProduto(oemCode: string | null, conf: DadosConfirmados | null, a
   return linhas.join("\n");
 }
 
-export async function POST(request: NextRequest) {
+export const POST = (request: NextRequest) => usoStore.run([], () => tratar(request));
+
+async function tratar(request: NextRequest) {
   const { produtoId } = (await request.json().catch(() => ({}))) as { produtoId?: string };
   if (!produtoId) return NextResponse.json({ error: "produtoId obrigatório" }, { status: 400 });
 
@@ -41,6 +44,7 @@ export async function POST(request: NextRequest) {
   if (!fatos) return NextResponse.json({ error: "identifique o produto ou preencha os dados confirmados primeiro" }, { status: 400 });
 
   const r = await gerarRascunho(fatos);
+  await gravarUso(supabase, produtoId, "rascunho").catch(() => {});
   if (!r.rascunho) return NextResponse.json({ error: "A IA não devolveu um rascunho válido, tente de novo" }, { status: 502 });
 
   const x = r.rascunho as Partial<Rascunho>;
