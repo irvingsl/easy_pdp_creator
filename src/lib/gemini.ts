@@ -4,6 +4,8 @@ const API = "https://generativelanguage.googleapis.com/v1beta";
 /** Preferidos, na ordem; depois completamos com o que a própria chave enxerga. */
 const PREFERRED = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"];
 const MAX_MODELS = 6;
+/** Modelos "lite": rápidos e baratos; bastam para pesquisar e para organizar texto (testados com busca na web). */
+const RAPIDOS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 let lastGood: string | null = null;
 
 type Confianca = "alta" | "media" | "baixa";
@@ -227,24 +229,35 @@ async function candidateModels(key: string): Promise<string[]> {
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
-async function callGemini(model: string, parts: Part[], grounded: boolean, maxOutputTokens = 8192) {
+async function callGemini(model: string, parts: Part[], grounded: boolean, maxOutputTokens = 8192, timeoutMs = 45000) {
   const key = process.env.GEMINI_API_KEY!;
-  const res = await fetch(`${API}/models/${model}:generateContent`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts }],
-      ...(grounded ? { tools: [{ google_search: {} }] } : {}),
-      generationConfig: { temperature: 0.2, maxOutputTokens },
-    }),
-  });
-  const body = await res.json().catch(() => null);
-  return { res, body };
+  try {
+    const res = await fetch(`${API}/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts }],
+        ...(grounded ? { tools: [{ google_search: {} }] } : {}),
+        generationConfig: { temperature: 0.2, maxOutputTokens },
+      }),
+      signal: AbortSignal.timeout(Math.max(3000, timeoutMs)),
+    });
+    const body = await res.json().catch(() => null);
+    return { res, body };
+  } catch (e) {
+    // demora demais: devolve 408 para o chamador trocar de modelo, em vez de a função inteira estourar (504)
+    const timeout = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+    return { res: new Response(null, { status: timeout ? 408 : 500 }), body: { error: { message: timeout ? "tempo esgotado" : String(e) } } };
+  }
 }
 
-function generate(model: string, images: { mime: string; data: string }[], notes: string | undefined, grounded: boolean) {
+/** Orçamento de tempo de uma etapa (a função da Vercel morre em 60 s). */
+const BUDGET_MS = 54000;
+const restante = (t0: number) => BUDGET_MS - (Date.now() - t0);
+
+function generate(model: string, images: { mime: string; data: string }[], notes: string | undefined, grounded: boolean, timeoutMs?: number) {
   const text = notes ? `${buildPrompt(grounded)}\n\n${notes}` : buildPrompt(grounded);
-  return callGemini(model, [{ text }, ...images.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } }))], grounded);
+  return callGemini(model, [{ text }, ...images.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } }))], grounded, 8192, timeoutMs);
 }
 
 function readGrounding(body: { candidates?: { content?: { parts?: { text?: string }[] }; groundingMetadata?: Record<string, unknown> }[] } | null, grounded: boolean) {
@@ -314,11 +327,13 @@ export async function identifyPart(
   const dead = new Set<string>(); // 404/400: modelo indisponível
   const tentativas: GeminiResult["tentativas"] = [];
   let lastError = "";
+  const t0 = Date.now();
 
   for (const grounded of modos) {
     for (const model of models) {
       if (dead.has(model)) continue;
-      const { res, body } = await generate(model, images, notes, grounded);
+      if (restante(t0) < 8000) break;
+      const { res, body } = await generate(model, images, notes, grounded, restante(t0));
       tentativas.push({ model, grounded, status: res.status });
       if (res.ok) {
         lastGood = model;
@@ -343,11 +358,13 @@ export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: Dado
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Defina GEMINI_API_KEY");
   const pergunta = perguntaDePesquisa(prev, conf);
-  const outros = (await candidateModels(key)).filter((m) => m !== model);
+  const ordem = [...new Set([...RAPIDOS, model, ...(await candidateModels(key))])].slice(0, 4);
   let ultimo: { status: number; erro: string; pergunta: string } = { status: 0, erro: "", pergunta };
+  const t0 = Date.now();
 
-  for (const m of [model, ...outros].slice(0, 3)) {
-    const a = await callGemini(m, [{ text: pergunta }], true, 2048);
+  for (const m of ordem) {
+    if (restante(t0) < 8000) break;
+    const a = await callGemini(m, [{ text: pergunta }], true, 2048, Math.min(restante(t0), 30000));
     if (!a.res.ok) {
       ultimo = { status: a.res.status, erro: `${m}: ${JSON.stringify(a.body?.error ?? a.body).slice(0, 200)}`, pergunta };
       continue;
@@ -364,7 +381,13 @@ export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: Dado
 
 /** Etapa de organização (outra chamada, sem busca): transforma o texto da pesquisa no formato do app. */
 export async function organizarPesquisa(prev: PartAnalysis, notes: string | undefined, texto: string, model: string) {
-  const b = await callGemini(model, [{ text: buildFormatPrompt(prev, notes, texto) }], false, 6144);
-  if (!b.res.ok) return { status: b.res.status, analysis: null as PartAnalysis | null };
-  return { status: b.res.status, analysis: splitResponse(readGrounding(b.body, false).text).analysis };
+  const t0 = Date.now();
+  for (const m of [...new Set([...RAPIDOS, model])]) {
+    if (restante(t0) < 8000) break;
+    const b = await callGemini(m, [{ text: buildFormatPrompt(prev, notes, texto) }], false, 6144, Math.min(restante(t0), 40000));
+    if (!b.res.ok) continue;
+    const analysis = splitResponse(readGrounding(b.body, false).text).analysis;
+    if (analysis) return { status: b.res.status, model: m, analysis };
+  }
+  return { status: 0, model, analysis: null as PartAnalysis | null };
 }

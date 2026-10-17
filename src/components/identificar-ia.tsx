@@ -22,6 +22,7 @@ export type Identificacao = {
   cego?: boolean;
   perguntaPesquisa?: string;
   erroPesquisa?: string;
+  emAndamento?: boolean;
   tentativas?: { model: string; grounded: boolean; status: number }[];
   geradoEm: string;
 };
@@ -84,6 +85,8 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
     try {
       setFase("1/4 Lendo as fotos...");
       let parcial = await etapa("fotos", { produtoId, cego, etapa: "fotos" });
+      // mostra já o que as fotos revelaram, enquanto a pesquisa segue
+      setRes({ ...(parcial as object), catalog: [], certeza: { level: "baixa", reasons: ["Em andamento: pesquisa na web e catálogo ainda por vir"] }, emAndamento: true } as unknown as Identificacao);
       setFase("2/4 Pesquisando na web...");
       parcial = await etapa("pesquisa", { produtoId, cego, etapa: "pesquisa", parcial });
       if (parcial.pesquisou) {
@@ -95,6 +98,8 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
       setRes(final as unknown as Identificacao);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro inesperado");
+      // se uma etapa falhar, o resultado parcial deixa de dizer "em andamento"
+      setRes((r) => (r ? { ...r, emAndamento: false } : r));
     } finally {
       setBusy(false);
       setFase("");
@@ -140,7 +145,12 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
 
       {res && a && "tipo_item" in a && (
         <div className="flex flex-col gap-4 text-sm">
-          {res.buscaWeb === false && (
+          {res.emAndamento && (
+            <p className="rounded-lg bg-blue-50 p-3 text-blue-900 dark:bg-blue-950 dark:text-blue-200">
+              Resultado parcial (só das fotos). A pesquisa na web e a conferência no catálogo ainda estão rodando.
+            </p>
+          )}
+          {!res.emAndamento && res.buscaWeb === false && (
             <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
               Nenhuma pesquisa na web foi feita nesta resposta (cota indisponível ou a IA decidiu não pesquisar). Ela veio só das fotos, sem fontes: trate preço e aplicações como suposição.
               {res.erroPesquisa && <span className="mt-1 block break-words text-xs">Motivo: {res.erroPesquisa}</span>}

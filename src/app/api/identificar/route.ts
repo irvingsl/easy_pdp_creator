@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       const r = await organizarPesquisa(parcial.analysis, confirmados, parcial.textoPesquisa, parcial.model);
       const { textoPesquisa: _omit, ...resto } = parcial;
       void _omit;
-      return NextResponse.json({ ...resto, analysis: r.analysis ?? parcial.analysis, tentativas: [...parcial.tentativas, { model: parcial.model, grounded: false, status: r.status }] });
+      return NextResponse.json({ ...resto, analysis: r.analysis ?? parcial.analysis, tentativas: [...parcial.tentativas, { model: r.model, grounded: false, status: r.status }] });
     }
 
     // etapa "final": conferência no catálogo do ML, certeza e gravação
