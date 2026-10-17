@@ -23,6 +23,7 @@ export type Identificacao = {
   perguntaPesquisa?: string;
   erroPesquisa?: string;
   emAndamento?: boolean;
+  etapas?: string[];
   tentativas?: { model: string; grounded: boolean; status: number }[];
   geradoEm: string;
 };

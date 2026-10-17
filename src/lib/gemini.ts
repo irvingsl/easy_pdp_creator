@@ -253,7 +253,7 @@ async function callGemini(model: string, parts: Part[], grounded: boolean, maxOu
 
 /** Orçamento de tempo de uma etapa (a função da Vercel morre em 60 s). */
 const BUDGET_MS = 54000;
-const restante = (t0: number) => BUDGET_MS - (Date.now() - t0);
+const restante = (t0: number, budget = BUDGET_MS) => budget - (Date.now() - t0);
 
 function generate(model: string, images: { mime: string; data: string }[], notes: string | undefined, grounded: boolean, timeoutMs?: number) {
   const text = notes ? `${buildPrompt(grounded)}\n\n${notes}` : buildPrompt(grounded);
@@ -365,7 +365,7 @@ export async function identifyPart(
 }
 
 /** Etapa de pesquisa (uma chamada): só a pergunta, com busca na web; tenta outros modelos se um falhar. */
-export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: DadosConfirmados | null) {
+export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: DadosConfirmados | null, budget = BUDGET_MS) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Defina GEMINI_API_KEY");
   const pergunta = perguntaDePesquisa(prev, conf);
@@ -374,8 +374,8 @@ export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: Dado
   const t0 = Date.now();
 
   for (const m of ordem) {
-    if (restante(t0) < 8000) break;
-    const a = await callGemini(m, [{ text: pergunta }], true, 2048, Math.min(restante(t0), 30000));
+    if (restante(t0, budget) < 8000) break;
+    const a = await callGemini(m, [{ text: pergunta }], true, 2048, Math.min(restante(t0, budget), 30000));
     if (!a.res.ok) {
       ultimo = { status: a.res.status, erro: `${m}: ${JSON.stringify(a.body?.error ?? a.body).slice(0, 200)}`, pergunta };
       continue;
@@ -391,11 +391,11 @@ export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: Dado
 }
 
 /** Etapa de organização (outra chamada, sem busca): transforma o texto da pesquisa no formato do app. */
-export async function organizarPesquisa(prev: PartAnalysis, notes: string | undefined, texto: string, model: string) {
+export async function organizarPesquisa(prev: PartAnalysis, notes: string | undefined, texto: string, model: string, budget = BUDGET_MS) {
   const t0 = Date.now();
   for (const m of [...new Set([...RAPIDOS, model])]) {
-    if (restante(t0) < 8000) break;
-    const b = await callGemini(m, [{ text: buildFormatPrompt(prev, notes, texto) }], false, 6144, Math.min(restante(t0), 40000));
+    if (restante(t0, budget) < 8000) break;
+    const b = await callGemini(m, [{ text: buildFormatPrompt(prev, notes, texto) }], false, 6144, Math.min(restante(t0, budget), 40000));
     if (!b.res.ok) continue;
     const analysis = splitResponse(readGrounding(b.body, false).text).analysis;
     if (analysis) return { status: b.res.status, model: m, analysis };

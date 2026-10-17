@@ -46,6 +46,8 @@ type Parcial = {
   perguntaPesquisa?: string;
   textoPesquisa?: string;
   erroPesquisa?: string;
+  /** etapas que realmente rodaram (ajuda a diagnosticar tela antiga em cache) */
+  etapas?: string[];
 };
 
 /**
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest) {
       }
       const out: Parcial = {
         analysis: gem.analysis, narrativa: gem.narrativa, sources: gem.sources, consultas: gem.consultas,
-        pesquisou: gem.pesquisou, model: gem.model, grounded: gem.grounded, tentativas: gem.tentativas, visao,
+        pesquisou: gem.pesquisou, model: gem.model, grounded: gem.grounded, tentativas: gem.tentativas, visao, etapas: ["fotos"],
       };
       return NextResponse.json(out);
     }
@@ -117,7 +119,7 @@ export async function POST(request: NextRequest) {
       const r = await pesquisaWeb(parcial.analysis, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null));
       const tentativas = [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
       if (!("texto" in r)) {
-        return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: r.erro });
+        return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: r.erro, etapas: [...(parcial.etapas ?? []), "pesquisa(falhou)"] });
       }
       const out: Parcial = {
         ...parcial,
@@ -129,6 +131,7 @@ export async function POST(request: NextRequest) {
         perguntaPesquisa: r.pergunta,
         textoPesquisa: r.texto,
         tentativas,
+        etapas: [...(parcial.etapas ?? []), "pesquisa"],
       };
       return NextResponse.json(out);
     }
@@ -139,11 +142,25 @@ export async function POST(request: NextRequest) {
       const r = await organizarPesquisa(parcial.analysis, confirmados, parcial.textoPesquisa, parcial.model);
       const { textoPesquisa: _omit, ...resto } = parcial;
       void _omit;
-      return NextResponse.json({ ...resto, analysis: r.analysis ?? parcial.analysis, tentativas: [...parcial.tentativas, { model: r.model, grounded: false, status: r.status }] });
+      return NextResponse.json({ ...resto, etapas: [...(parcial.etapas ?? []), "organizar"], analysis: r.analysis ?? parcial.analysis, tentativas: [...parcial.tentativas, { model: r.model, grounded: false, status: r.status }] });
     }
 
     // etapa "final": conferência no catálogo do ML, certeza e gravação
-    const a = parcial.analysis;
+    let p: Parcial = parcial;
+    if (!p.perguntaPesquisa) {
+      // A pesquisa nunca rodou (ex.: o navegador ainda usa uma versão antiga da página, em cache): roda aqui,
+      // com orçamento de tempo menor, para o resultado não sair sem ela.
+      const r = await pesquisaWeb(p.analysis, p.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null), 30000);
+      p = { ...p, perguntaPesquisa: r.pergunta, etapas: [...(p.etapas ?? []), "pesquisa-no-final"], tentativas: [...p.tentativas, { model: "model" in r && r.model ? r.model : p.model, grounded: true, status: r.status }] };
+      if ("texto" in r) {
+        p = { ...p, pesquisou: true, sources: r.sources, consultas: r.consultas, textoPesquisa: r.texto, narrativa: [p.narrativa, `— Pesquisa na web —\n${r.texto}`].filter(Boolean).join("\n\n") };
+        const o = await organizarPesquisa(p.analysis, confirmados, r.texto, r.model, 14000);
+        if (o.analysis) p = { ...p, analysis: o.analysis };
+      } else {
+        p = { ...p, erroPesquisa: r.erro };
+      }
+    }
+    const a = p.analysis;
     // Só números de peça e equivalentes; códigos de processo (lote, data...) não vão ao catálogo
     const codes = [
       ...new Set(
@@ -168,18 +185,19 @@ export async function POST(request: NextRequest) {
     const mainFound = catalog.some((c) => c.relevante && c.code === a.numero_peca_principal?.replace(/\s+/g, ""));
     const result = {
       analysis: a,
-      narrativa: parcial.narrativa,
-      visao: parcial.visao ?? null,
+      narrativa: p.narrativa,
+      visao: p.visao ?? null,
       cego: !!cego,
-      sources: parcial.sources,
+      sources: p.sources,
       catalog,
-      certeza: certainty(parcial.sources.length, a.candidatos?.length ?? 0, !!a.numero_peca_principal, mainFound, parcial.visao?.paginas.length ?? 0),
-      model: parcial.model,
-      buscaWeb: parcial.pesquisou,
-      consultas: parcial.consultas,
-      perguntaPesquisa: parcial.perguntaPesquisa,
-      erroPesquisa: (parcial as Parcial & { erroPesquisa?: string }).erroPesquisa,
-      tentativas: parcial.tentativas,
+      certeza: certainty(p.sources.length, a.candidatos?.length ?? 0, !!a.numero_peca_principal, mainFound, p.visao?.paginas.length ?? 0),
+      model: p.model,
+      buscaWeb: p.pesquisou,
+      consultas: p.consultas,
+      perguntaPesquisa: p.perguntaPesquisa,
+      erroPesquisa: p.erroPesquisa,
+      tentativas: p.tentativas,
+      etapas: p.etapas,
       geradoEm: new Date().toISOString(),
     };
     await supabase.from("produtos").update({ identificacao: result, identificado_em: result.geradoEm }).eq("id", produtoId);
