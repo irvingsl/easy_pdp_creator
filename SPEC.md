@@ -114,3 +114,9 @@ Ideia: o sistema vira a **fonte da verdade do estoque** de quem vende em vários
 - **Remoção de fundo:** gratuita, no navegador, atrás de `BackgroundRemover`.
 - **Preço de mercado:** fica para depois do MVP; Google via API paga de terceiros (ex.: SerpApi) continua válido para isso. Raspagem direta descartada.
 - **DevCenter do ML:** app criado com a conta pessoal atual (limite de 1 app por conta no Brasil).
+
+## Ideias futuras (anotadas em out/2026)
+
+- **Medição por objeto de referência:** ferramenta de "régua na foto". O vendedor fotografa a peça de cima, no mesmo plano, com um objeto de tamanho conhecido (moeda de R$1, ~27 mm, a confirmar; folha A4 210×297 mm; régua), toca nas duas bordas da referência e nas duas bordas da peça, e o app calcula o tamanho em mm (proporção de pixels). Grava como característica "medida na foto, estimativa". Objeto maior (A4/régua) é mais preciso que moeda.
+- **Lista de medidas por categoria (SPEC passo 4):** o app pede ao vendedor as medidas que faltam (ex.: diâmetro externo) antes de pesquisar, em vez de tentar adivinhar pela foto.
+- **Busca por produtos parecidos (Google Lens via API paga)**: só se o fluxo com medidas não bastar para peças sem código legível.
