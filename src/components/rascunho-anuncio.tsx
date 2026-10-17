@@ -72,6 +72,31 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
     }
   }
 
+  const [pausado, setPausado] = useState(true);
+  const [pub, setPub] = useState<{ ok?: boolean; id?: string; link?: string | null; status?: string; error?: string; resposta?: unknown; avisoDescricao?: unknown } | null>(null);
+
+  async function publicar() {
+    if (!r) return;
+    const quando = pausado ? "PAUSADO (não aparece para compradores até você ativar)" : "ATIVO (visível para compradores agora)";
+    if (!window.confirm(`Publicar "${r.titulo}" por R$ ${r.preco ?? "?"} no Mercado Livre, ${quando}?`)) return;
+    setBusy(true);
+    setPub(null);
+    try {
+      const { error } = await createClient().from("produtos").update({ rascunho: r, titulo_base: r.titulo, descricao_base: r.descricao }).eq("id", produtoId);
+      if (error) return setPub({ error: error.message });
+      const res = await fetch("/api/anuncios/publicar", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ produtoId, confirmar: true, pausado }) });
+      const txt = await res.text();
+      try {
+        setPub(JSON.parse(txt));
+      } catch {
+        setPub({ error: res.status === 504 ? "Demorou demais: confira no Mercado Livre se o anúncio foi criado antes de tentar de novo." : `Resposta inesperada (${res.status})` });
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const set = <K extends keyof Rascunho>(k: K, v: Rascunho[K]) => setR((p) => (p ? { ...p, [k]: v } : p));
 
   return (
@@ -165,6 +190,24 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
               ))}
             </div>
             <button type="button" className={btnSecondary} disabled={busy} onClick={() => chamarML(false)}>Validar no Mercado Livre (não publica)</button>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={pausado} onChange={(e) => setPausado(e.target.checked)} />
+              Publicar pausado (recomendado no primeiro teste)
+            </label>
+            <button type="button" className={btnPrimary} disabled={busy} onClick={publicar}>Publicar no Mercado Livre</button>
+            {pub?.ok && (
+              <p className="rounded-lg bg-green-50 p-3 text-green-900 dark:bg-green-950 dark:text-green-200">
+                ✓ Criado: {pub.id} ({pub.status === "paused" ? "pausado" : pub.status}).{" "}
+                {pub.link && <a className="underline" href={pub.link} target="_blank" rel="noreferrer">Abrir no ML</a>}
+                {pub.avisoDescricao ? " Atenção: a descrição não foi enviada, edite no ML." : ""}
+              </p>
+            )}
+            {pub?.error && (
+              <div className="flex flex-col gap-2">
+                <p className="text-red-600">{pub.error}</p>
+                {pub.resposta !== undefined && <CopyBlock text={JSON.stringify(pub.resposta, null, 2)} label="Copiar resposta do ML" />}
+              </div>
+            )}
             {ml?.error && <p className="text-red-600">{ml.error}</p>}
             {ml?.status !== undefined && (
               <div className="flex flex-col gap-2">

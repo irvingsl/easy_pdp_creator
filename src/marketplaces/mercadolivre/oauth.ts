@@ -52,9 +52,9 @@ export async function mlGet(path: string, accessToken: string) {
   return { status: res.status, ok: res.ok, body };
 }
 
-export async function mlPost(path: string, accessToken: string, payload: unknown) {
+export async function mlPost(path: string, accessToken: string, payload: unknown, method: "POST" | "PUT" = "POST") {
   const res = await fetch(`${API}${path}`, {
-    method: "POST",
+    method,
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
     body: JSON.stringify(payload),
     cache: "no-store",
