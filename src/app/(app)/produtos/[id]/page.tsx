@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { BUCKET_ORIGINAIS, BUCKET_PROCESSADAS } from "@/domain/types";
 import { DeleteProdutoButton } from "@/components/delete-produto-button";
 import { ProdutoFotos, type FotoView } from "@/components/produto-fotos";
+import { IdentificarIA, type Identificacao } from "@/components/identificar-ia";
 
 export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
   const { id } = await props.params;
@@ -11,7 +12,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
 
   const { data: produto } = await supabase
     .from("produtos")
-    .select("id, user_id, sku, oem_code, titulo_base, estoque, status, criado_em, produto_fotos(id, path_original, path_processada, status_processamento, ordem)")
+    .select("id, user_id, sku, identificacao, oem_code, titulo_base, estoque, status, criado_em, produto_fotos(id, path_original, path_processada, status_processamento, ordem)")
     .eq("id", id)
     .maybeSingle();
   if (!produto) notFound();
@@ -31,6 +32,8 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
           {produto.oem_code ? `OEM: ${produto.oem_code} · ` : ""}Estoque: {produto.estoque}
         </p>
       </div>
+
+      <IdentificarIA produtoId={produto.id} inicial={(produto.identificacao as Identificacao | null) ?? null} />
 
       <ProdutoFotos
         produtoId={produto.id}
