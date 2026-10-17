@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const obrigatorios = p.atributosCategoria
       .filter((a) => a.tags?.required || a.tags?.catalog_required)
       .map((a) => ({ id: a.id, nome: a.name, enviado: p.payload.attributes.some((x) => x.id === a.id) }));
-    return NextResponse.json({ status: res.status, ok: res.ok, resposta: res.body ?? "(sem corpo: validação passou)", obrigatorios, payload: p.payload });
+    return NextResponse.json({ status: res.status, ok: res.ok, fotoPrincipalOk: p.fotoPrincipalOk, resposta: res.body ?? "(sem corpo: validação passou)", obrigatorios, payload: p.payload });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "falha" }, { status: 500 });
   }

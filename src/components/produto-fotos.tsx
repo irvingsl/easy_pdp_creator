@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
-import { addPhoto, deletePhoto, keepOriginal, reprocessPhoto } from "@/lib/photos";
+import { addPhoto, deletePhoto, keepOriginal, makeMain, reprocessPhoto } from "@/lib/photos";
 import { btnSecondary } from "./ui";
 
 export type FotoView = {
@@ -76,6 +76,9 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
   }
 
   const disabled = busy !== null;
+  // A principal é a primeira com versão processada; o ML exige fundo branco nela, então só vale "fundo branco" (não a original)
+  const elegivel = (f: FotoView) => f.status === "ok" && !!f.processadaUrl && !f.manterOriginal;
+  const principal = fotos.find((f) => f.processadaUrl);
   return (
     <section className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3">
@@ -99,6 +102,11 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
           </label>
         ))}
       </div>
+      {principal && !elegivel(principal) && (
+        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          A foto principal está com a original (sem fundo branco). O Mercado Livre exige fundo branco na primeira foto: escolha outra como principal ou volte ao fundo branco.
+        </p>
+      )}
       {busy && <p className="text-sm text-gray-500">{busy}</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -107,6 +115,7 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
           <li key={f.id} className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
             <div className="text-sm font-medium">
               Foto {i + 1} · <span className="font-normal text-gray-500">{STATUS_LABEL[f.status]}</span>
+              {principal?.id === f.id && <span className="ml-2 rounded bg-indigo-100 px-2 py-0.5 text-xs text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">Principal</span>}
             </div>
             <div className="grid grid-cols-2 gap-2">
               {([["Original", f.originalUrl], [f.manterOriginal ? "No anúncio: original" : "Fundo branco", f.processadaUrl]] as const).map(([label, src]) => (
@@ -124,7 +133,17 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
               ))}
             </div>
             <div className="flex flex-wrap gap-2">
-              {!f.manterOriginal && (
+              {principal?.id !== f.id && elegivel(f) && (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  className={smallBtn}
+                  onClick={() => run("Definindo a principal", () => makeMain(createClient(), { fotoId: f.id, ordemAtual: fotos.map((x) => ({ id: x.id, ordem: x.ordem })) }))}
+                >
+                  Tornar principal
+                </button>
+              )}
+              {!f.manterOriginal && principal?.id !== f.id && (
                 <button
                   type="button"
                   disabled={disabled}

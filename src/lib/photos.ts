@@ -92,3 +92,12 @@ export async function keepOriginal(
     .eq("id", p.fotoId);
   if (p.pathProcessada) await supabase.storage.from(BUCKET_PROCESSADAS).remove([p.pathProcessada]);
 }
+
+/** Coloca a foto em primeiro lugar (a principal do anúncio) e renumera as demais mantendo a ordem. */
+export async function makeMain(supabase: SupabaseClient, p: { fotoId: string; ordemAtual: { id: string; ordem: number }[] }) {
+  const ids = [p.fotoId, ...[...p.ordemAtual].sort((a, b) => a.ordem - b.ordem).map((f) => f.id).filter((id) => id !== p.fotoId)];
+  for (const [ordem, id] of ids.entries()) {
+    const { error } = await supabase.from("produto_fotos").update({ ordem }).eq("id", id);
+    if (error) throw error;
+  }
+}

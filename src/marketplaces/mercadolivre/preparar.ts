@@ -8,7 +8,7 @@ import { atributosDaCategoria, montarAnuncio, sugerirCategorias } from "./listin
 export async function prepararAnuncio(supabase: SupabaseClient, token: string, produtoId: string, sugerir = false) {
   const { data: produto } = await supabase
     .from("produtos")
-    .select("id, oem_code, dados_confirmados, rascunho, produto_fotos(path_processada, ordem)")
+    .select("id, oem_code, dados_confirmados, rascunho, produto_fotos(path_processada, ordem, manter_original, status_processamento)")
     .eq("id", produtoId)
     .maybeSingle();
   if (!produto) return { erro: "produto não encontrado", http: 404 } as const;
@@ -21,10 +21,10 @@ export async function prepararAnuncio(supabase: SupabaseClient, token: string, p
     r.categoria_id = categorias[0].id;
   }
   const atributosCategoria = await atributosDaCategoria(token, r.categoria_id);
-  const fotos = produto.produto_fotos
-    .filter((f) => f.path_processada)
-    .sort((a, b) => a.ordem - b.ordem)
-    .map((f) => supabase.storage.from(BUCKET_PROCESSADAS).getPublicUrl(f.path_processada!).data.publicUrl);
+  const comProcessada = produto.produto_fotos.filter((f) => f.path_processada).sort((a, b) => a.ordem - b.ordem);
+  // O ML exige fundo branco na foto principal: a primeira precisa ser a versão processada, não a original mantida
+  const fotoPrincipalOk = !!comProcessada[0] && comProcessada[0].status_processamento === "ok" && !comProcessada[0].manter_original;
+  const fotos = comProcessada.map((f) => supabase.storage.from(BUCKET_PROCESSADAS).getPublicUrl(f.path_processada!).data.publicUrl);
   const payload = montarAnuncio({
     rascunho: r,
     conf: produto.dados_confirmados as DadosConfirmados | null,
@@ -33,5 +33,5 @@ export async function prepararAnuncio(supabase: SupabaseClient, token: string, p
     atributosCategoria,
     fotos,
   });
-  return { rascunho: r, payload, atributosCategoria } as const;
+  return { rascunho: r, payload, atributosCategoria, fotoPrincipalOk } as const;
 }

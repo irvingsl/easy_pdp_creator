@@ -50,7 +50,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
     if (!error) router.refresh();
   }
 
-  const [ml, setMl] = useState<{ categorias?: { id: string; nome: string; caminho: string }[]; status?: number; resposta?: unknown; obrigatorios?: { id: string; nome: string; enviado: boolean }[]; payload?: unknown; error?: string } | null>(null);
+  const [ml, setMl] = useState<{ categorias?: { id: string; nome: string; caminho: string }[]; status?: number; resposta?: unknown; fotoPrincipalOk?: boolean; obrigatorios?: { id: string; nome: string; enviado: boolean }[]; payload?: unknown; error?: string } | null>(null);
 
   async function chamarML(sugerir: boolean) {
     if (!r) return;
@@ -212,6 +212,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
             {ml?.status !== undefined && (
               <div className="flex flex-col gap-2">
                 <p>{ml.status === 200 || ml.status === 201 ? "✓ O ML aceitou o anúncio" : `O ML apontou problemas (HTTP ${ml.status})`}</p>
+                {ml.fotoPrincipalOk === false && <p className="text-xs text-amber-700 dark:text-amber-300">A foto principal não tem fundo branco: defina outra como principal nas fotos.</p>}
                 {ml.obrigatorios?.some((o) => !o.enviado) && (
                   <p className="text-xs text-amber-700 dark:text-amber-300">Obrigatórios ainda não preenchidos: {ml.obrigatorios.filter((o) => !o.enviado).map((o) => o.nome).join(", ")}</p>
                 )}
