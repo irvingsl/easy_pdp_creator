@@ -6,7 +6,7 @@ Assistente de anúncios para o Mercado Livre (nicho: autopeças) a partir de fot
 **Pronto e em produção:** login (e-mail/senha), produtos com várias fotos, remoção de fundo gratuita no navegador com recorte e fundo branco 1200×1200, ampliar/excluir/adicionar/refazer foto, conexão OAuth com o Mercado Livre (tokens criptografados) e página de testes da API (`/conta`).
 
 **Descobertas do spike do ML:**
-- `/products/search` (catálogo) responde 200 e reconhece número de peça, mas **não tem toda peça** (ex.: LuK 323 0162 10 não foi achado). Peça antiga tende a ser anúncio livre.
+- `/products/search` (catálogo) responde 200 e reconhece número de peça (ex.: `620312700` → `PART_NUMBER`). O LuK 323 0162 10 não foi achado numa 1ª tentativa, **ainda sem testar as variações do código** (a verificar). O catálogo é opcional: a categoria exige só marca, número de peça e tipo de veículo.
 - `/sites/MLB/search` (busca de anúncios) dá **403** mesmo com token: sem preços/anúncios parecidos em massa pela API.
 - Compatibilidade de veículos: edição de compatibilidades do catálogo é só leitura pela API desde 15/07/2026; as do próprio vendedor são editáveis.
 
