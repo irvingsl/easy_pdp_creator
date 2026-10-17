@@ -10,6 +10,7 @@ import { btnPrimary } from "./ui";
 
 export type Identificacao = {
   analysis: PartAnalysis;
+  narrativa?: string;
   sources: { title: string; uri: string }[];
   catalog: CatalogHit[];
   certeza: { level: "alta" | "média" | "baixa"; reasons: string[] };
@@ -24,6 +25,18 @@ const BADGE = {
   média: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   baixa: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
 } as const;
+
+const CLASSE: Record<string, string> = {
+  numero_de_peca: "número de peça",
+  equivalente: "equivalente",
+  processo: "código de processo",
+  desconhecido: "desconhecido",
+};
+const ORIGEM: Record<string, string> = {
+  contado_na_foto: "contado na foto",
+  estimado_na_foto: "estimado na foto",
+  fonte_web: "fonte na web",
+};
 
 const money = (n: number | null) => (n == null ? "?" : `R$ ${n.toLocaleString("pt-BR")}`);
 
@@ -69,7 +82,11 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
       <p className="text-xs text-gray-500">As fotos originais (até 4) são enviadas ao Google (Gemini), que também pesquisa na web. No plano gratuito cada identificação usa 1 das 20 consultas diárias (5 por minuto).</p>
       {error && <p className="break-words text-sm text-red-600">{error}</p>}
 
-      {res && a && (
+      {res && a && !("tipo_item" in a) && (
+        <p className="text-sm text-gray-500">Este resultado foi gerado por uma versão antiga. Clique em &ldquo;Identificar de novo&rdquo;.</p>
+      )}
+
+      {res && a && "tipo_item" in a && (
         <div className="flex flex-col gap-4 text-sm">
           {res.buscaWeb === false && (
             <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
@@ -83,11 +100,21 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
             <ul className="list-disc pl-5 text-gray-600 dark:text-gray-400">
               {res.certeza.reasons.map((r) => <li key={r}>{r}</li>)}
             </ul>
-            <span className="text-xs text-gray-500">Estimativa baseada em evidências, não uma garantia. Confirme com a peça na mão.</span>
+            <span className="text-xs text-gray-500">Estimativa baseada em evidências, não uma garantia. Confirme com o item na mão.</span>
           </div>
 
           <div>
-            <div className="text-base font-medium">{a.tipo_peca ?? "Peça não identificada"}{a.marca ? ` · ${a.marca}` : ""}</div>
+            <div className="text-base font-medium">
+              {a.tipo_item ?? "Item não identificado"}
+              {a.marca?.valor ? ` · ${a.marca.valor}` : ""}
+              {a.formato_de_venda && a.formato_de_venda !== "indefinido" ? ` · ${a.formato_de_venda}` : ""}
+            </div>
+            {a.marca?.valor && (
+              <div className="text-xs text-gray-500">Marca: origem {a.marca.origem}, confiança {a.marca.confianca}</div>
+            )}
+            {a.componentes_visiveis?.length > 0 && (
+              <div className="text-gray-500">Componentes: {a.componentes_visiveis.join(", ")}</div>
+            )}
             {a.numero_peca_principal && (
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span>Número de peça: <strong className="font-mono">{a.numero_peca_principal}</strong></span>
@@ -96,16 +123,57 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
                 </button>
               </div>
             )}
-            {a.textos_gravados?.length > 0 && <div className="text-gray-500">Gravado na peça: {a.textos_gravados.join(" · ")}</div>}
           </div>
 
-          <div>
-            <h3 className="font-medium">Características</h3>
-            <p>
-              Diâmetro: {a.caracteristicas?.diametro_mm ?? "?"} mm · Estrias: {a.caracteristicas?.estrias ?? "?"}
-              {a.caracteristicas?.outras ? ` · ${a.caracteristicas.outras}` : ""}
-            </p>
-          </div>
+          {res.narrativa && (
+            <details open>
+              <summary className="cursor-pointer font-medium">Raciocínio da IA</summary>
+              <p className="mt-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">{res.narrativa}</p>
+            </details>
+          )}
+
+          {a.textos_gravados?.length > 0 && (
+            <div>
+              <h3 className="font-medium">Lido no item</h3>
+              <ul className="list-disc pl-5">
+                {a.textos_gravados.map((t, i) => (
+                  <li key={i}>
+                    <span className="font-mono">{t.texto}</span>{" "}
+                    <span className="text-gray-500">(foto {t.foto ?? "?"}, leitura {t.legibilidade})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {a.codigos?.length > 0 && (
+            <div>
+              <h3 className="font-medium">Códigos</h3>
+              <ul className="list-disc pl-5">
+                {a.codigos.map((c, i) => (
+                  <li key={i}>
+                    <span className="font-mono">{c.codigo}</span> · {CLASSE[c.classe] ?? c.classe}
+                    {c.marca ? ` · ${c.marca}` : ""} · confiança {c.confianca}
+                    {c.fonte_url && <> · <a href={c.fonte_url} target="_blank" rel="noreferrer" className="underline">fonte</a></>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {a.caracteristicas?.length > 0 && (
+            <div>
+              <h3 className="font-medium">Características</h3>
+              <ul className="list-disc pl-5">
+                {a.caracteristicas.map((c, i) => (
+                  <li key={i}>
+                    {c.nome}: <strong>{c.valor}{c.unidade ? ` ${c.unidade}` : ""}</strong>{" "}
+                    <span className="text-gray-500">({ORIGEM[c.origem] ?? c.origem}{c.como ? `: ${c.como}` : ""}; confiança {c.confianca})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {a.aplicacoes?.length > 0 && (
             <div>
@@ -113,10 +181,11 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
               <ul className="list-disc pl-5">
                 {a.aplicacoes.map((p, i) => (
                   <li key={i}>
-                    {p.veiculo}{p.motor ? ` · ${p.motor}` : ""}{p.anos ? ` · ${p.anos}` : ""}{" "}
-                    <span className={p.confirmado ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}>
-                      ({p.confirmado ? "confirmado por fonte" : "suposição"})
+                    {p.descricao}{p.anos ? ` · ${p.anos}` : ""}{" "}
+                    <span className={p.origem === "fonte_web" ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}>
+                      ({p.origem === "fonte_web" ? "confirmado por fonte" : "suposição"})
                     </span>
+                    {p.fonte_url && <> · <a href={p.fonte_url} target="_blank" rel="noreferrer" className="underline">fonte</a></>}
                   </li>
                 ))}
               </ul>
@@ -143,12 +212,20 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
 
           {(a.preco?.minimo != null || a.preco?.maximo != null) && (
             <p>
-              <span className="font-medium">Preço estimado (avulso): </span>
+              <span className="font-medium">Preço estimado{a.preco.formato_de_referencia ? ` (${a.preco.formato_de_referencia})` : ""}: </span>
               {money(a.preco.minimo)} a {money(a.preco.maximo)}
+              {a.preco.condicao ? ` · ${a.preco.condicao}` : ""}
               {a.preco.observacao ? <span className="text-gray-500"> — {a.preco.observacao}</span> : null}
+              {a.preco.fontes?.length > 0 && <span className="text-gray-500"> · fontes: {a.preco.fontes.join(", ")}</span>}
             </p>
           )}
 
+          {a.fotos_sugeridas?.length > 0 && (
+            <div>
+              <h3 className="font-medium">Fotos que ajudariam</h3>
+              <ul className="list-disc pl-5 text-gray-600 dark:text-gray-400">{a.fotos_sugeridas.map((f) => <li key={f}>{f}</li>)}</ul>
+            </div>
+          )}
           {a.termos_busca?.length > 0 && <p className="text-gray-500">Termos de busca: {a.termos_busca.join(" · ")}</p>}
           {a.categoria_sugerida_texto && <p className="text-gray-500">Categoria sugerida: {a.categoria_sugerida_texto}</p>}
           {a.duvidas?.length > 0 && (

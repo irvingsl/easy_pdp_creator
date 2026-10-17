@@ -4,22 +4,50 @@ const PREFERRED = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.8-flas
 const MAX_MODELS = 6;
 let lastGood: string | null = null;
 
+type Confianca = "alta" | "media" | "baixa";
+
 export type PartAnalysis = {
-  tipo_peca: string | null;
-  marca: string | null;
-  textos_gravados: string[];
+  tipo_item: string | null;
+  formato_de_venda: "unidade" | "kit" | "par" | "conjunto" | "indefinido";
+  componentes_visiveis: string[];
+  marca: { valor: string | null; origem: string; confianca: Confianca } | null;
+  textos_gravados: { texto: string; foto: number | null; legibilidade: string }[];
+  codigos: {
+    codigo: string;
+    classe: "numero_de_peca" | "equivalente" | "processo" | "desconhecido";
+    marca: string | null;
+    origem: string;
+    confianca: Confianca;
+    fonte_url: string | null;
+  }[];
   numero_peca_principal: string | null;
-  outros_numeros: { marca: string | null; numero: string; tipo: string | null }[];
-  caracteristicas: { diametro_mm: number | null; estrias: number | null; outras: string | null };
-  aplicacoes: { veiculo: string; motor: string | null; anos: string | null; confirmado: boolean }[];
-  preco: { minimo: number | null; maximo: number | null; observacao: string | null };
+  caracteristicas: {
+    nome: string;
+    valor: string;
+    unidade: string | null;
+    origem: string;
+    como: string | null;
+    confianca: Confianca;
+  }[];
+  aplicacoes: { descricao: string; anos: string | null; origem: string; fonte_url: string | null }[];
+  preco: {
+    minimo: number | null;
+    maximo: number | null;
+    formato_de_referencia: string | null;
+    condicao: string | null;
+    fontes: string[];
+    observacao: string | null;
+  };
   termos_busca: string[];
   categoria_sugerida_texto: string | null;
+  fotos_sugeridas: string[];
   duvidas: string[];
 };
 
 export type GeminiResult = {
   analysis: PartAnalysis | null;
+  /** análise em texto livre que a IA escreve antes do JSON */
+  narrativa: string;
   text: string;
   sources: { title: string; uri: string }[];
   model: string;
@@ -28,50 +56,92 @@ export type GeminiResult = {
   tentativas: { model: string; grounded: boolean; status: number }[];
 };
 
+/** Domínio do negócio; trocar aqui (ou por variável de ambiente) quando o app deixar de ser só de autopeças. */
+const DEFAULT_CONTEXT = "peças e acessórios automotivos vendidos no Brasil";
+
 const SCHEMA = `{
-  "tipo_peca": string|null,
-  "marca": string|null,
-  "textos_gravados": string[],
+  "tipo_item": string|null,
+  "formato_de_venda": "unidade"|"kit"|"par"|"conjunto"|"indefinido",
+  "componentes_visiveis": string[],
+  "marca": { "valor": string|null, "origem": "gravado"|"visivel"|"fonte_web"|"suposicao", "confianca": "alta"|"media"|"baixa" },
+  "textos_gravados": [{ "texto": string, "foto": number, "legibilidade": "boa"|"parcial"|"ruim" }],
+  "codigos": [{ "codigo": string, "classe": "numero_de_peca"|"equivalente"|"processo"|"desconhecido",
+                "marca": string|null, "origem": string, "confianca": "alta"|"media"|"baixa", "fonte_url": string|null }],
   "numero_peca_principal": string|null,
-  "outros_numeros": [{"marca": string|null, "numero": string, "tipo": "original"|"equivalente"|null}],
-  "caracteristicas": {"diametro_mm": number|null, "estrias": number|null, "outras": string|null},
-  "aplicacoes": [{"veiculo": string, "motor": string|null, "anos": string|null, "confirmado": boolean}],
-  "preco": {"minimo": number|null, "maximo": number|null, "observacao": string|null},
+  "caracteristicas": [{ "nome": string, "valor": string, "unidade": string|null,
+                        "origem": "contado_na_foto"|"estimado_na_foto"|"fonte_web", "como": string, "confianca": "alta"|"media"|"baixa" }],
+  "aplicacoes": [{ "descricao": string, "anos": string|null, "origem": "fonte_web"|"suposicao", "fonte_url": string|null }],
+  "preco": { "minimo": number|null, "maximo": number|null, "formato_de_referencia": string|null,
+             "condicao": "novo"|"usado"|null, "fontes": string[], "observacao": string|null },
   "termos_busca": string[],
   "categoria_sugerida_texto": string|null,
+  "fotos_sugeridas": string[],
   "duvidas": string[]
 }`;
 
-function buildPrompt(grounded: boolean) {
-  return `Você é especialista em autopeças brasileiras. As fotos mostram a MESMA peça automotiva, de estoque antigo, sem informação nenhuma sobre ela.
+function buildPrompt(grounded: boolean, context = process.env.IDENTIFICACAO_CONTEXTO ?? DEFAULT_CONTEXT) {
+  return `Você é um especialista em identificar produtos a partir de fotos e em pesquisar suas especificações.
+Contexto do negócio: ${context}.
 
-Regras gerais:
-- Transcreva em "textos_gravados" tudo o que estiver gravado ou impresso na peça (marca, códigos, lote, composto da lona).
-- Não invente códigos, medidas nem aplicações. Na dúvida, use null ou [].
-- NÃO estime diâmetro e NÃO conte estrias a partir da foto: só informe esses valores se uma fonte confirmar; senão null.
-- Códigos de lote, data ou composto da lona (ex.: "2050", "RD/77", "03 19") NÃO são número de peça: não os coloque em numero_peca_principal nem em outros_numeros.
+As fotos abaixo mostram o MESMO item, em ângulos diferentes. Não sei nada sobre ele. Seu trabalho é descobrir
+o que é, com a maior precisão que as evidências permitirem, sem inventar.
+
+## Princípios
+1. Evidência acima de palpite. Toda informação precisa de uma origem: "gravado/impresso no item",
+   "visível na foto", "fonte na web" (com a URL) ou "suposição". Nunca apresente suposição como fato.
+2. Não parta de hipóteses. Não assuma tipo de item, marca, formato (peça única, kit, par, conjunto) nem
+   veículo/modelo de aplicação antes de observar. Se as fotos mostram mais de um componente, é kit ou
+   conjunto: liste os componentes.
+3. "Não sei" é uma boa resposta. Use null ou lista vazia e explique em "duvidas" o que falta. Nunca invente
+   códigos, medidas, marcas, aplicações nem preços.
+4. Medidas e contagens podem vir da foto, desde que você diga como chegou nelas (ex.: "contei N na foto 3")
+   e o grau de confiança (alta, média, baixa). Se a imagem não permite medir ou contar com segurança, use null.
+
+## Como proceder
+Passo 1 - Observar. Descreva o que vê: tipo de item, formato (unidade, kit, par, conjunto), componentes
+visíveis, material, estado (novo, usado, desgastado).
+Passo 2 - Ler. Transcreva literalmente todo texto, logotipo, número e código visível. Diga em qual foto está
+e se a leitura é boa, parcial ou ruim. Não corrija nem complete o que não estiver legível.
+Passo 3 - Classificar os códigos. Para cada código, decida se é: (a) número de peça ou modelo do fabricante,
+(b) código equivalente de outra marca, ou (c) código de processo (lote, data de fabricação, turno, material,
+inspeção). Códigos de processo costumam ser curtos, ter formato de data ou se repetir em padrões, e ficar em
+áreas de marcação industrial; números de peça costumam ser mais longos ou estruturados e ficar junto da marca.
+Se não der para decidir, marque "desconhecido". Só um número de peça vai em "numero_peca_principal".
 ${
   grounded
-    ? `- Pesquise na web (anúncios, catálogos de fabricantes) para achar o número de peça do fabricante, os cruzamentos, as aplicações e o preço.
-- "confirmado" em cada aplicação só pode ser true se uma fonte da web sustenta isso.
-- Preço: faixa de mercado para a peça AVULSA nova (não kit), em reais; null se não achar.`
-    : `- ATENÇÃO: nesta chamada você NÃO tem acesso à web. Responda só com o que é legível nas fotos.
-- Deixe numero_peca_principal, outros_numeros, aplicacoes e preco vazios/null, a menos que o número de peça esteja gravado e legível na peça.
-- Em "duvidas", liste o que precisaria ser pesquisado (número de peça, aplicação, medidas).`
+    ? `Passo 4 - Pesquisar na web. Monte as buscas com o que realmente leu e viu: marca + códigos + tipo de item +
+características observadas. Priorize catálogos de fabricantes e distribuidores, depois anúncios de marketplaces.
+Confirme número de peça e aplicações em pelo menos duas fontes independentes, quando possível. Se as fontes
+divergirem, mostre as duas versões.`
+    : `Passo 4 - Sem acesso à web nesta chamada: não afirme nada que dependa de pesquisa (número de peça não
+gravado, aplicações, preço). Preencha só o que vem das fotos, gere "termos_busca" para o vendedor pesquisar e
+liste em "duvidas" o que precisa ser confirmado.`
 }
+Passo 5 - Preço. Informe faixa de preço apenas para o item no MESMO formato das fotos (se é kit, preço de kit;
+se é unidade, preço de unidade). Se só achar preço em outro formato, diga isso e não misture. Indique a
+condição (novo ou usado) e de onde veio cada preço. Sem fonte, use null.
+Passo 6 - O que falta. Diga que foto adicional ajudaria (ex.: "close da região X", "o outro lado", "a etiqueta")
+em "fotos_sugeridas".
 
-Responda SOMENTE com um JSON válido (sem texto antes ou depois) neste formato:
+## Formato da resposta
+Primeiro escreva uma análise curta (até 15 linhas): o que observou, como decidiu e o que encontrou.
+Depois, ao final, o JSON abaixo dentro de um bloco \`\`\`json.
 ${SCHEMA}`;
 }
 
-function extractJson(text: string): PartAnalysis | null {
+function splitResponse(text: string): { narrativa: string; analysis: PartAnalysis | null } {
+  const fence = text.search(/```/);
+  const brace = text.indexOf("{");
+  const cut = fence >= 0 ? fence : brace >= 0 ? brace : text.length;
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
   const candidate = fenced ?? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+  let analysis: PartAnalysis | null = null;
   try {
-    return JSON.parse(candidate) as PartAnalysis;
+    analysis = JSON.parse(candidate) as PartAnalysis;
   } catch {
-    return null;
+    analysis = null;
   }
+  return { narrativa: text.slice(0, cut).trim(), analysis };
 }
 
 async function listModels(key: string): Promise<string[]> {
@@ -145,7 +215,7 @@ async function generate(model: string, images: { mime: string; data: string }[],
         },
       ],
       ...(grounded ? { tools: [{ google_search: {} }] } : {}),
-      generationConfig: { temperature: 0.2 },
+      generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
     }),
   });
   const body = await res.json().catch(() => null);
@@ -177,7 +247,8 @@ export async function identifyPart(images: { mime: string; data: string }[], not
         const sources = ((cand?.groundingMetadata?.groundingChunks ?? []) as { web?: { uri: string; title: string } }[])
           .filter((c) => c.web)
           .map((c) => ({ title: c.web!.title, uri: c.web!.uri }));
-        return { analysis: extractJson(text), text, sources, model, grounded, tentativas };
+        const { narrativa, analysis } = splitResponse(text);
+        return { analysis, narrativa, text, sources, model, grounded, tentativas };
       }
       lastError = `Gemini ${res.status} (${model}): ${JSON.stringify(body?.error ?? body).slice(0, 300)}`;
       if (res.status !== 429) dead.add(model);

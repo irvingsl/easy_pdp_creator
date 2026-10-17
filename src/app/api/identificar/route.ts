@@ -56,13 +56,21 @@ export async function POST(request: NextRequest) {
 
     // Confere cada número encontrado no catálogo do ML (evidência independente do Google)
     const a = gem.analysis;
-    const codes = [...new Set([a.numero_peca_principal, ...(a.outros_numeros ?? []).map((n) => n.numero)].filter((c): c is string => !!c && significant(c)))].slice(0, 6);
+    // Só números de peça e equivalentes; códigos de processo (lote, data...) não vão ao catálogo
+    const codes = [
+      ...new Set(
+        [
+          a.numero_peca_principal,
+          ...(a.codigos ?? []).filter((c) => c.classe === "numero_de_peca" || c.classe === "equivalente").map((c) => c.codigo),
+        ].filter((c): c is string => !!c && significant(c)),
+      ),
+    ].slice(0, 6);
     let catalog: CatalogHit[] = [];
     const token = await getAccessToken(supabase);
     if (token) catalog = await Promise.all(codes.map((c) => lookupPartNumber(token, c.replace(/\s+/g, ""))));
 
     // Só vale o que o ML reconhece como número de peça E é do mesmo tipo de peça
-    const kw = keyword(a.tipo_peca);
+    const kw = keyword(a.tipo_item);
     catalog = catalog.map((c) => {
       const relevante = c.exact && (!kw || c.products.some((p) => norm(p.name).includes(kw)));
       return { ...c, relevante, ignorado: c.exact && !relevante ? "existe no catálogo, mas é outro tipo de peça (ignorado)" : undefined };
@@ -71,6 +79,7 @@ export async function POST(request: NextRequest) {
     const mainFound = catalog.some((c) => c.relevante && c.code === a.numero_peca_principal?.replace(/\s+/g, ""));
     const result = {
       analysis: a,
+      narrativa: gem.narrativa,
       sources: gem.sources,
       catalog,
       certeza: certainty(gem.sources.length, catalog.filter((c) => c.relevante).length, mainFound),
