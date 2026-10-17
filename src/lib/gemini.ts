@@ -290,6 +290,17 @@ function perguntaDePesquisa(prev: PartAnalysis, conf: DadosConfirmados | null | 
   ].filter(Boolean).join(" ");
   // Códigos gravados que não são número de peça (lote, composto, "desconhecido") NÃO entram na pergunta:
   // o modelo os trata como pista e se perde. Só marca + medidas + fatos do vendedor.
+
+  // Número de peça já conhecido (digitado pelo vendedor OU lido nas fotos): a pergunta vira uma consulta
+  // direta sobre ele, que é o formato mais confiável para o Gemini realmente pesquisar.
+  const numeroLido =
+    conf?.numero_peca ||
+    prev.numero_peca_principal ||
+    (prev.codigos ?? []).find((c) => c.classe === "numero_de_peca" && c.origem === "gravado_no_item")?.codigo;
+  if (numeroLido) {
+    const formato = prev.formato_de_venda && prev.formato_de_venda !== "indefinido" ? prev.formato_de_venda : "o mesmo formato do item";
+    return `Pesquise na web o número de peça ${numeroLido}${marca ? ` da marca ${marca}` : ""}. Confirme que tipo de item é, as medidas e características, os códigos equivalentes de outras marcas, as aplicações (veículos e anos) e a faixa de preço (${formato}).${fatos ? ` O item que tenho tem: ${fatos}; diga se combina.` : ""} Responda em no máximo 12 linhas e cite as fontes.`;
+  }
   return `Pesquise na web: quais números de peça do fabricante correspondem a ${item}${fatos ? `, com estas características: ${fatos}` : ""}? Vários modelos podem ter as mesmas medidas, então liste os possíveis; para cada um, informe os códigos equivalentes de outras marcas, as aplicações (veículos e anos) e a faixa de preço do mesmo formato. Responda em no máximo 12 linhas e cite as fontes.`;
 }
 
