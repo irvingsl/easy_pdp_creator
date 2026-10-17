@@ -89,7 +89,8 @@ export async function POST(request: NextRequest) {
       }
 
       const notas = [confirmados, evidenciasParaIA(visao)].filter(Boolean).join("\n\n") || undefined;
-      const gem = await identifyPart(images, notas);
+      // 1ª etapa só com as fotos (rápida, sem busca na web); a pesquisa vem na etapa seguinte
+      const gem = await identifyPart(images, notas, [false]);
       if (!gem.analysis) {
         return NextResponse.json({ error: "A IA não devolveu um JSON válido", raw: gem.text, sources: gem.sources }, { status: 502 });
       }
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
 
     if (etapa === "pesquisa") {
       const r = await pesquisaFocada(parcial.analysis, confirmados, parcial.model);
-      const tentativas = [...parcial.tentativas, { model: parcial.model, grounded: true, status: r.status }];
+      const tentativas = [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
       if (!("analysis" in r) || !r.pesquisou) return NextResponse.json({ ...parcial, tentativas });
       const out: Parcial = {
         ...parcial,
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
         sources: r.sources,
         consultas: r.consultas,
         pesquisou: true,
+        model: r.model ?? parcial.model,
         tentativas,
       };
       return NextResponse.json(out);

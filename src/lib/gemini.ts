@@ -257,7 +257,11 @@ ${SCHEMA}`;
  * Passo 1: tenta todos os modelos COM busca na web (qualquer um com cota serve).
  * Passo 2: só se nenhum tiver, tenta sem a busca, e a IA é instruída a não chutar.
  */
-export async function identifyPart(images: { mime: string; data: string }[], notes?: string): Promise<GeminiResult> {
+export async function identifyPart(
+  images: { mime: string; data: string }[],
+  notes?: string,
+  modos: boolean[] = [true, false],
+): Promise<GeminiResult> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Defina GEMINI_API_KEY");
 
@@ -266,7 +270,7 @@ export async function identifyPart(images: { mime: string; data: string }[], not
   const tentativas: GeminiResult["tentativas"] = [];
   let lastError = "";
 
-  for (const grounded of [true, false]) {
+  for (const grounded of modos) {
     for (const model of models) {
       if (dead.has(model)) continue;
       const { res, body } = await generate(model, images, notes, grounded);
@@ -289,12 +293,21 @@ export async function identifyPart(images: { mime: string; data: string }[], not
   throw new Error(`${lastError} | tentativas: ${tentativas.map((t) => `${t.model}${t.grounded ? "+web" : ""}=${t.status}`).join(", ")}. Veja https://ai.dev/rate-limit`);
 }
 
-/** 2ª etapa (chamada separada, para caber no tempo da função): pesquisa curta e focada, que leva o Gemini a pesquisar. */
+/** 2ª etapa (chamada separada, para caber no tempo da função): pesquisa curta e focada na web. */
 export async function pesquisaFocada(prev: PartAnalysis, notes: string | undefined, model: string) {
-  if (!process.env.GEMINI_API_KEY) throw new Error("Defina GEMINI_API_KEY");
-  const { res, body } = await callGemini(model, [{ text: buildResearchPrompt(prev, notes) }], true);
-  if (!res.ok) return { status: res.status, erro: JSON.stringify(body?.error ?? body).slice(0, 300) } as const;
-  const g = readGrounding(body, true);
-  const sp = splitResponse(g.text);
-  return { status: res.status, analysis: sp.analysis, narrativa: sp.narrativa, sources: g.sources, consultas: g.consultas, pesquisou: g.pesquisou } as const;
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Defina GEMINI_API_KEY");
+  const outros = (await candidateModels(key)).filter((m) => m !== model);
+  let ultimo: { status: number; erro: string } = { status: 0, erro: "" };
+  for (const m of [model, ...outros].slice(0, 3)) {
+    const { res, body } = await callGemini(m, [{ text: buildResearchPrompt(prev, notes) }], true);
+    if (!res.ok) {
+      ultimo = { status: res.status, erro: `${m}: ${JSON.stringify(body?.error ?? body).slice(0, 200)}` };
+      continue;
+    }
+    const g = readGrounding(body, true);
+    const sp = splitResponse(g.text);
+    return { status: res.status, model: m, analysis: sp.analysis, narrativa: sp.narrativa, sources: g.sources, consultas: g.consultas, pesquisou: g.pesquisou };
+  }
+  return ultimo;
 }
