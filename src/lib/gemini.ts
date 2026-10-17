@@ -1,4 +1,8 @@
-const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
+const API = "https://generativelanguage.googleapis.com/v1beta";
+/** Preferidos, na ordem; depois completamos com o que a própria chave enxerga. */
+const PREFERRED = ["gemini-3.8-flash", "gemini-3.8-flash-lite"];
+const MAX_MODELS = 4;
+let lastGood: string | null = null;
 
 export type PartAnalysis = {
   tipo_peca: string | null;
@@ -21,6 +25,7 @@ export type GeminiResult = {
   model: string;
   /** false quando a busca na web ficou indisponível (cota) e a IA respondeu só pelas fotos */
   grounded: boolean;
+  tentativas: { model: string; grounded: boolean; status: number }[];
 };
 
 const PROMPT = `Você é especialista em autopeças brasileiras. As fotos mostram a MESMA peça automotiva, de estoque antigo, sem informação nenhuma sobre ela.
@@ -57,10 +62,31 @@ function extractJson(text: string): PartAnalysis | null {
   }
 }
 
-async function generate(images: { mime: string; data: string }[], notes: string | undefined, grounded: boolean) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("Defina GEMINI_API_KEY");
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+async function listModels(key: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${API}/models?pageSize=100`, { headers: { "x-goog-api-key": key } });
+    const body = (await res.json()) as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
+    return (body.models ?? [])
+      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m) => m.name.replace(/^models\//, ""))
+      .filter((n) => /^gemini-[\d.]+-flash/.test(n) && !/image|tts|live|audio|embedding|thinking|exp/.test(n));
+  } catch {
+    return [];
+  }
+}
+
+async function candidateModels(key: string): Promise<string[]> {
+  const set = new Set<string>();
+  if (process.env.GEMINI_MODEL) set.add(process.env.GEMINI_MODEL);
+  if (lastGood) set.add(lastGood);
+  PREFERRED.forEach((m) => set.add(m));
+  if (set.size < MAX_MODELS) (await listModels(key)).sort().reverse().forEach((m) => set.add(m));
+  return [...set].slice(0, MAX_MODELS);
+}
+
+async function generate(model: string, images: { mime: string; data: string }[], notes: string | undefined, grounded: boolean) {
+  const key = process.env.GEMINI_API_KEY!;
+  const res = await fetch(`${API}/models/${model}:generateContent`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
@@ -81,23 +107,29 @@ async function generate(images: { mime: string; data: string }[], notes: string 
   return { res, body };
 }
 
+/** Tenta cada modelo (com busca na web e, se faltar cota, sem ela) até algum responder. */
 export async function identifyPart(images: { mime: string; data: string }[], notes?: string): Promise<GeminiResult> {
-  let grounded = true;
-  let { res, body } = await generate(images, notes, true);
-  if (res.status === 429) {
-    // Sem cota para busca na web: tenta só com as fotos
-    grounded = false;
-    ({ res, body } = await generate(images, notes, false));
-  }
-  if (!res.ok) {
-    const quota = res.status === 429 ? " Cota do Gemini esgotada para este modelo; veja https://ai.dev/rate-limit ou defina GEMINI_MODEL." : "";
-    throw new Error(`Gemini ${res.status}: ${JSON.stringify(body?.error ?? body).slice(0, 500)}${quota}`);
-  }
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Defina GEMINI_API_KEY");
 
-  const cand = body?.candidates?.[0];
-  const text: string = (cand?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
-  const sources = ((cand?.groundingMetadata?.groundingChunks ?? []) as { web?: { uri: string; title: string } }[])
-    .filter((c) => c.web)
-    .map((c) => ({ title: c.web!.title, uri: c.web!.uri }));
-  return { analysis: extractJson(text), text, sources, model: MODEL, grounded };
+  const tentativas: GeminiResult["tentativas"] = [];
+  let lastError = "";
+  for (const model of await candidateModels(key)) {
+    for (const grounded of [true, false]) {
+      const { res, body } = await generate(model, images, notes, grounded);
+      tentativas.push({ model, grounded, status: res.status });
+      if (res.ok) {
+        lastGood = model;
+        const cand = body?.candidates?.[0];
+        const text: string = (cand?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
+        const sources = ((cand?.groundingMetadata?.groundingChunks ?? []) as { web?: { uri: string; title: string } }[])
+          .filter((c) => c.web)
+          .map((c) => ({ title: c.web!.title, uri: c.web!.uri }));
+        return { analysis: extractJson(text), text, sources, model, grounded, tentativas };
+      }
+      lastError = `Gemini ${res.status} (${model}): ${JSON.stringify(body?.error ?? body).slice(0, 300)}`;
+      if (res.status !== 429) break; // 404/400: este modelo não serve; só 429 vale tentar sem a busca na web
+    }
+  }
+  throw new Error(`${lastError} | tentativas: ${tentativas.map((t) => `${t.model}${t.grounded ? "+web" : ""}=${t.status}`).join(", ")}. Veja https://ai.dev/rate-limit`);
 }

@@ -15,6 +15,7 @@ export type Identificacao = {
   certeza: { level: "alta" | "média" | "baixa"; reasons: string[] };
   model: string;
   buscaWeb?: boolean;
+  tentativas?: { model: string; grounded: boolean; status: number }[];
   geradoEm: string;
 };
 
