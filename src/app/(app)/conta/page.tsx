@@ -50,6 +50,7 @@ export default async function ContaPage(props: PageProps<"/conta">) {
   let porVariante: { v: string; r: Resp }[] = [];
   let dominios: Resp | null = null;
   let catalogo: { cat: string; r: Resp } | null = null;
+  let caminhos: Record<string, string> = {};
   let anuncio: Resp | null = null;
 
   if (conta) {
@@ -64,6 +65,14 @@ export default async function ContaPage(props: PageProps<"/conta">) {
           })),
         );
         dominios = await mlGet(`/sites/MLB/domain_discovery/search?limit=5&q=${encodeURIComponent(q)}`, token);
+        const lista = Array.isArray(dominios.body) ? (dominios.body as Domain[]) : [];
+        const detalhes = await Promise.all(lista.map((d) => mlGet(`/categories/${d.category_id}`, token)));
+        caminhos = Object.fromEntries(
+          lista.map((d, i) => [
+            d.category_id,
+            ((detalhes[i].body as { path_from_root?: { name: string }[] } | null)?.path_from_root ?? []).map((c) => c.name).join(" › "),
+          ]),
+        );
         const top = (dominios.body as Domain[] | null)?.[0];
         if (top) catalogo = { cat: top.category_id, r: await mlGet(`/categories/${top.category_id}/attributes`, token) };
       }
@@ -137,6 +146,7 @@ export default async function ContaPage(props: PageProps<"/conta">) {
                   {doms.map((d) => (
                     <li key={d.category_id} className="border-t border-gray-200 py-1 dark:border-gray-800">
                       {d.category_name} <span className="font-mono text-xs text-gray-500">{d.category_id} · {d.domain_id}</span>
+                      {caminhos[d.category_id] && <div className="text-xs text-gray-500">{caminhos[d.category_id]}</div>}
                     </li>
                   ))}
                 </ul>
