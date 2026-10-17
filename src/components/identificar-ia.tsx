@@ -66,7 +66,7 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
           {busy ? "Analisando (pode levar até 1 min)..." : res ? "Identificar de novo" : "Identificar com IA"}
         </button>
       </div>
-      <p className="text-xs text-gray-500">As fotos originais (até 4) são enviadas ao Google (Gemini), que também pesquisa na web.</p>
+      <p className="text-xs text-gray-500">As fotos originais (até 4) são enviadas ao Google (Gemini), que também pesquisa na web. No plano gratuito cada identificação usa 1 das 20 consultas diárias (5 por minuto).</p>
       {error && <p className="break-words text-sm text-red-600">{error}</p>}
 
       {res && a && (
