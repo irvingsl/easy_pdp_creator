@@ -17,6 +17,7 @@ export function NovoProdutoForm() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [produtoLink, setProdutoLink] = useState<string | null>(null);
 
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
@@ -31,6 +32,7 @@ export function NovoProdutoForm() {
     setError("");
     setNotice("");
     const supabase = createClient();
+    let produtoCriado: string | null = null;
     try {
       const { data: auth } = await supabase.auth.getUser();
       const userId = auth.user!.id;
@@ -55,14 +57,26 @@ export function NovoProdutoForm() {
         .single();
       if (pErr) throw pErr;
 
+      produtoCriado = produto.id;
+      const falhasFundo: string[] = [];
       for (const [i, small] of smalls.entries()) {
-        await addPhoto(supabase, {
+        const r = await addPhoto(supabase, {
           userId,
           produtoId: produto.id,
           small,
           ordem: i,
           step: (label) => setProgress({ done: i, total: smalls.length, step: label }),
         });
+        if (r.erro) falhasFundo.push(`foto ${i + 1}: ${r.erro}`);
+      }
+      if (falhasFundo.length) {
+        setProgress(null);
+        setFiles([]);
+        setNotice(
+          `Produto salvo, mas o fundo não foi removido em ${falhasFundo.length} foto(s) (${falhasFundo.join("; ")}). Abra o produto e use "Refazer fundo".`,
+        );
+        setProdutoLink(produto.id);
+        return;
       }
       if (skipped.length) {
         setProgress(null);
@@ -73,6 +87,11 @@ export function NovoProdutoForm() {
       router.push("/produtos");
       router.refresh();
     } catch (err) {
+      // Não deixa um produto vazio para trás se nenhuma foto chegou a ser salva
+      if (produtoCriado) {
+        const { count } = await supabase.from("produto_fotos").select("id", { count: "exact", head: true }).eq("produto_id", produtoCriado);
+        if (!count) await supabase.from("produtos").delete().eq("id", produtoCriado);
+      }
       setError(err instanceof Error ? err.message : "Erro inesperado");
       setProgress(null);
     }
@@ -149,7 +168,7 @@ export function NovoProdutoForm() {
       </button>
       {notice && (
         <p className="text-sm text-amber-700">
-          {notice} <Link href="/produtos" className="underline">Ver produtos</Link>
+          {notice} <Link href={produtoLink ? `/produtos/${produtoLink}` : "/produtos"} className="underline">{produtoLink ? "Abrir o produto" : "Ver produtos"}</Link>
         </p>
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}

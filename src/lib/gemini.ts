@@ -235,21 +235,31 @@ function readGrounding(body: { candidates?: { content?: { parts?: { text?: strin
   return { text, sources, consultas, pesquisou: grounded && (sources.length > 0 || consultas.length > 0) };
 }
 
-/** Pedido curto e focado: com fotos e muitas regras o Gemini tende a responder de memória; assim ele pesquisa. */
+/** Pergunta direta (como no teste que sempre fez o Gemini pesquisar), montada só com o que se sabe do item. */
+function perguntaDePesquisa(prev: PartAnalysis, notes: string | undefined): string {
+  const carac = (prev.caracteristicas ?? [])
+    .filter((c) => c.confianca !== "baixa" && c.origem !== "estimado_na_foto")
+    .map((c) => `${c.nome} ${c.valor}${c.unidade ? ` ${c.unidade}` : ""}`);
+  const item = [
+    prev.tipo_item ?? "um item",
+    prev.marca?.valor ? `da marca ${prev.marca.valor}` : "",
+    prev.formato_de_venda && prev.formato_de_venda !== "indefinido" ? `(${prev.formato_de_venda})` : "",
+  ].filter(Boolean).join(" ");
+  const fatos = [...carac, ...(notes ? [notes.replace(/^Fatos confirmados[^\n]*\n- /, "").replace(/\n- /g, "; ")] : [])].filter(Boolean).join("; ");
+  const gravados = (prev.textos_gravados ?? []).map((t) => t.texto).join(", ");
+  return `Pesquise na web: qual é o número de peça do fabricante, os códigos equivalentes de outras marcas e as aplicações (veículos e anos) de ${item}${fatos ? `, com estas características: ${fatos}` : ""}${gravados ? `. Gravações visíveis no item: ${gravados}` : ""}? Informe também a faixa de preço do mesmo formato, e cite as fontes.`;
+}
+
+/** Pesquisa focada: a pergunta vem primeiro, curta; o resto são regras e o formato. */
 function buildResearchPrompt(prev: PartAnalysis, notes: string | undefined, context = process.env.IDENTIFICACAO_CONTEXTO ?? DEFAULT_CONTEXT) {
-  return `Contexto do negócio: ${context}.
-Um item foi analisado só pelas fotos. Resultado dessa análise (JSON):
-${JSON.stringify(prev)}
+  return `${perguntaDePesquisa(prev, notes)}
+
+Contexto do negócio: ${context}.
+Já sabemos, pela análise das fotos (JSON): ${JSON.stringify(prev)}
 ${notes ? `\n${notes}\n` : ""}
-Agora PESQUISE NA WEB, antes de responder, usando a marca, os códigos lidos, o tipo de item, as características observadas e, se houver, o veículo/aplicação informado, para encontrar:
-- o número de peça do fabricante deste item exato (e não de um kit ou conjunto, a menos que o item seja um kit);
-- códigos equivalentes de outras marcas;
-- as aplicações (veículos e anos);
-- a faixa de preço do item no mesmo formato das fotos, com a condição (novo ou usado).
+Regras: use só o que encontrou nas páginas pesquisadas e cite a URL de cada informação; nunca cite uma URL que você não obteve nem estime preço de memória (nesse caso, null); se não encontrar, diga que não encontrou; se as fontes divergirem, mostre as duas versões; os fatos confirmados pelo vendedor prevalecem sobre qualquer fonte; diferencie o número de peça do item do número de um kit ou conjunto.
 
-Regras: use só o que encontrou nas páginas pesquisadas; cite a URL de onde veio cada informação e nunca cite uma URL que você não obteve; se não encontrar, use null e diga que não encontrou; se as fontes divergirem, mostre as duas versões; os fatos confirmados pelo vendedor prevalecem sobre qualquer fonte.
-
-Responda com uma análise curta (até 12 linhas) e, ao final, o JSON completo ATUALIZADO (mantendo o que a análise das fotos já tinha e acrescentando o que a pesquisa trouxe) dentro de um bloco \`\`\`json, neste formato:
+Depois de pesquisar, responda com uma análise curta (até 12 linhas) e, ao final, o JSON completo ATUALIZADO (mantendo o que a análise das fotos já tinha e acrescentando o que a pesquisa trouxe) dentro de um bloco \`\`\`json, neste formato:
 ${SCHEMA}`;
 }
 

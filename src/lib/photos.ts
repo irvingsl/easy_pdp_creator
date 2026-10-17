@@ -38,9 +38,11 @@ export async function addPhoto(
       .from("produto_fotos")
       .update({ path_processada: pathProcessada, status_processamento: "ok" })
       .eq("id", foto.id);
-  } catch {
+  } catch (e) {
     await supabase.from("produto_fotos").update({ status_processamento: "erro" }).eq("id", foto.id);
+    return { erro: e instanceof Error ? e.message : String(e) };
   }
+  return {};
 }
 
 /** Refaz o fundo branco a partir do original já salvo. */

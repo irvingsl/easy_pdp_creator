@@ -136,6 +136,9 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
           {res.buscaWeb === false && (
             <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
               Nenhuma pesquisa na web foi feita nesta resposta (cota indisponível ou a IA decidiu não pesquisar). Ela veio só das fotos, sem fontes: trate preço e aplicações como suposição.
+              {res.tentativas && res.tentativas.length > 0 && (
+                <span className="mt-1 block font-mono text-xs">Tentativas: {res.tentativas.map((t) => `${t.model}${t.grounded ? "+web" : ""}=${t.status}`).join(", ")}</span>
+              )}
             </p>
           )}
           {res.buscaWeb && res.consultas && res.consultas.length > 0 && (
