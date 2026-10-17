@@ -19,6 +19,7 @@ export function DadosConfirmadosForm({
 }) {
   const router = useRouter();
   const [marca, setMarca] = useState(inicial.marca ?? "");
+  const [veiculo, setVeiculo] = useState(inicial.veiculo ?? "");
   const [numero, setNumero] = useState(inicial.numero_peca ?? oemCode ?? "");
   const [linhas, setLinhas] = useState<Linha[]>(
     (inicial.caracteristicas ?? []).map((c) => ({ nome: c.nome, valor: c.valor, unidade: c.unidade ?? "" })),
@@ -35,6 +36,7 @@ export function DadosConfirmadosForm({
     const dados: DadosConfirmados = {
       marca: marca.trim() || undefined,
       numero_peca: numero.trim() || undefined,
+      veiculo: veiculo.trim() || undefined,
       caracteristicas: linhas
         .filter((l) => l.nome.trim() && l.valor.trim())
         .map((l) => ({ nome: l.nome.trim(), valor: l.valor.trim(), unidade: l.unidade.trim() || undefined })),
@@ -60,6 +62,7 @@ export function DadosConfirmadosForm({
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <input value={marca} onChange={(e) => setMarca(e.target.value)} placeholder="Marca" className={inputBase} />
         <input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Número de peça (gravado no item)" className={inputBase} />
+        <input value={veiculo} onChange={(e) => setVeiculo(e.target.value)} placeholder="Veículo/aplicação, se souber (ex.: marca, modelo, ano)" className={`${inputBase} sm:col-span-2`} />
       </div>
 
       <div className="flex flex-col gap-2">

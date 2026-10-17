@@ -1,6 +1,6 @@
 const API = "https://generativelanguage.googleapis.com/v1beta";
 /** Preferidos, na ordem; depois completamos com o que a própria chave enxerga. */
-const PREFERRED = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.8-flash", "gemini-3.8-flash-lite"];
+const PREFERRED = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"];
 const MAX_MODELS = 6;
 let lastGood: string | null = null;
 
@@ -167,7 +167,7 @@ export async function listAllModels(key: string): Promise<string[]> {
   return (body?.models ?? [])
     .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
     .map((m) => m.name.replace(/^models\//, ""))
-    .filter((n) => n.startsWith("gemini-") && !/image|tts|live|audio|embedding|robotics|computer|deep-research|vision/.test(n))
+    .filter((n) => n.startsWith("gemini-") && !/image|tts|live|audio|embedding|robotics|computer|deep-research|vision|transcribe|customtools/.test(n))
     .sort();
 }
 
@@ -202,27 +202,54 @@ async function candidateModels(key: string): Promise<string[]> {
   return [...set].slice(0, MAX_MODELS);
 }
 
-async function generate(model: string, images: { mime: string; data: string }[], notes: string | undefined, grounded: boolean) {
+type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
+
+async function callGemini(model: string, parts: Part[], grounded: boolean) {
   const key = process.env.GEMINI_API_KEY!;
   const res = await fetch(`${API}/models/${model}:generateContent`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: notes ? `${buildPrompt(grounded)}\n\nInformação do vendedor: ${notes}` : buildPrompt(grounded) },
-            ...images.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } })),
-          ],
-        },
-      ],
+      contents: [{ role: "user", parts }],
       ...(grounded ? { tools: [{ google_search: {} }] } : {}),
       generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
     }),
   });
   const body = await res.json().catch(() => null);
   return { res, body };
+}
+
+function generate(model: string, images: { mime: string; data: string }[], notes: string | undefined, grounded: boolean) {
+  const text = notes ? `${buildPrompt(grounded)}\n\n${notes}` : buildPrompt(grounded);
+  return callGemini(model, [{ text }, ...images.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } }))], grounded);
+}
+
+function readGrounding(body: { candidates?: { content?: { parts?: { text?: string }[] }; groundingMetadata?: Record<string, unknown> }[] } | null, grounded: boolean) {
+  const cand = body?.candidates?.[0];
+  const text = (cand?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+  const sources = ((cand?.groundingMetadata?.groundingChunks ?? []) as { web?: { uri: string; title: string } }[])
+    .filter((c) => c.web)
+    .map((c) => ({ title: c.web!.title, uri: c.web!.uri }));
+  const consultas = ((cand?.groundingMetadata?.webSearchQueries ?? []) as string[]).slice(0, 10);
+  return { text, sources, consultas, pesquisou: grounded && (sources.length > 0 || consultas.length > 0) };
+}
+
+/** Pedido curto e focado: com fotos e muitas regras o Gemini tende a responder de memória; assim ele pesquisa. */
+function buildResearchPrompt(prev: PartAnalysis, notes: string | undefined, context = process.env.IDENTIFICACAO_CONTEXTO ?? DEFAULT_CONTEXT) {
+  return `Contexto do negócio: ${context}.
+Um item foi analisado só pelas fotos. Resultado dessa análise (JSON):
+${JSON.stringify(prev)}
+${notes ? `\n${notes}\n` : ""}
+Agora PESQUISE NA WEB, antes de responder, usando a marca, os códigos lidos, o tipo de item, as características observadas e, se houver, o veículo/aplicação informado, para encontrar:
+- o número de peça do fabricante deste item exato (e não de um kit ou conjunto, a menos que o item seja um kit);
+- códigos equivalentes de outras marcas;
+- as aplicações (veículos e anos);
+- a faixa de preço do item no mesmo formato das fotos, com a condição (novo ou usado).
+
+Regras: use só o que encontrou nas páginas pesquisadas; cite a URL de onde veio cada informação e nunca cite uma URL que você não obteve; se não encontrar, use null e diga que não encontrou; se as fontes divergirem, mostre as duas versões; os fatos confirmados pelo vendedor prevalecem sobre qualquer fonte.
+
+Responda com uma análise curta (até 12 linhas) e, ao final, o JSON completo ATUALIZADO (mantendo o que a análise das fotos já tinha e acrescentando o que a pesquisa trouxe) dentro de um bloco \`\`\`json, neste formato:
+${SCHEMA}`;
 }
 
 /**
@@ -245,15 +272,34 @@ export async function identifyPart(images: { mime: string; data: string }[], not
       tentativas.push({ model, grounded, status: res.status });
       if (res.ok) {
         lastGood = model;
-        const cand = body?.candidates?.[0];
-        const text: string = (cand?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
-        const sources = ((cand?.groundingMetadata?.groundingChunks ?? []) as { web?: { uri: string; title: string } }[])
-          .filter((c) => c.web)
-          .map((c) => ({ title: c.web!.title, uri: c.web!.uri }));
-        const { narrativa, analysis } = splitResponse(text);
-        const consultas = ((cand?.groundingMetadata?.webSearchQueries ?? []) as string[]).slice(0, 10);
-        const pesquisou = grounded && (sources.length > 0 || consultas.length > 0);
-        return { analysis, narrativa, text, sources, model, grounded, pesquisou, consultas, tentativas };
+        const g = readGrounding(body, grounded);
+        const { narrativa, analysis } = splitResponse(g.text);
+        let result: GeminiResult = {
+          analysis, narrativa, text: g.text, sources: g.sources, model, grounded,
+          pesquisou: g.pesquisou, consultas: g.consultas, tentativas,
+        };
+
+        // Se a IA não pesquisou, faz uma 2ª chamada curta e focada, que a leva a pesquisar
+        if (grounded && analysis && !g.pesquisou) {
+          const r2 = await callGemini(model, [{ text: buildResearchPrompt(analysis, notes) }], true);
+          tentativas.push({ model, grounded: true, status: r2.res.status });
+          if (r2.res.ok) {
+            const g2 = readGrounding(r2.body, true);
+            const s2 = splitResponse(g2.text);
+            if (g2.pesquisou) {
+              result = {
+                ...result,
+                analysis: s2.analysis ?? analysis,
+                narrativa: [narrativa, s2.narrativa && `— Pesquisa na web —\n${s2.narrativa}`].filter(Boolean).join("\n\n"),
+                text: g2.text,
+                sources: g2.sources,
+                pesquisou: true,
+                consultas: g2.consultas,
+              };
+            }
+          }
+        }
+        return result;
       }
       lastError = `Gemini ${res.status} (${model}): ${JSON.stringify(body?.error ?? body).slice(0, 300)}`;
       if (res.status !== 429) dead.add(model);

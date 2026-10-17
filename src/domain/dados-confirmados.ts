@@ -2,6 +2,8 @@
 export type DadosConfirmados = {
   marca?: string;
   numero_peca?: string;
+  /** veículo/aplicação que o vendedor já sabe (ajuda muito a pesquisa) */
+  veiculo?: string;
   caracteristicas?: { nome: string; valor: string; unidade?: string }[];
 };
 
@@ -9,6 +11,7 @@ export type DadosConfirmados = {
 export function notasParaIA(oemCode: string | null, d: DadosConfirmados | null): string | undefined {
   const linhas: string[] = [];
   if (d?.marca) linhas.push(`marca: ${d.marca}`);
+  if (d?.veiculo) linhas.push(`veículo/aplicação informado: ${d.veiculo}`);
   const numero = d?.numero_peca || oemCode;
   if (numero) linhas.push(`número de peça gravado no item: ${numero}`);
   for (const c of d?.caracteristicas ?? []) linhas.push(`${c.nome}: ${c.valor}${c.unidade ? ` ${c.unidade}` : ""}`);

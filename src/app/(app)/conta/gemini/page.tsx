@@ -11,7 +11,7 @@ export default async function GeminiTestPage(props: PageProps<"/conta/gemini">) 
   let resultados: Awaited<ReturnType<typeof probeGrounding>>[] = [];
   if (key) {
     modelos = await listAllModels(key);
-    if (testar) resultados = await Promise.all(modelos.slice(0, 12).map((m) => probeGrounding(m)));
+    if (testar) resultados = await Promise.all(modelos.slice(0, 20).map((m) => probeGrounding(m)));
   }
 
   return (
