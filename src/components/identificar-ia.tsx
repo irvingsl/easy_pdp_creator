@@ -130,7 +130,9 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
                 {res.catalog.map((c) => (
                   <li key={c.code}>
                     <span className="font-mono">{c.code}</span>{" "}
-                    {c.exact
+                    {c.ignorado
+                      ? <span className="text-gray-500">→ {c.ignorado}</span>
+                      : c.exact
                       ? <>→ <strong>reconhecido</strong>: {c.products.map((p) => `${p.name} (${p.brand}${p.diameter ? `, ${p.diameter}` : ""}, ${p.status})`).join("; ")}</>
                       : <span className="text-gray-500">→ não reconhecido como número de peça</span>}
                   </li>

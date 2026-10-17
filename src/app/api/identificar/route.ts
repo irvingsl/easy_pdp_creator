@@ -9,6 +9,11 @@ export const maxDuration = 60;
 
 const MAX_PHOTOS = 4;
 
+const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+/** Palavra que caracteriza o tipo de peça (a mais longa), p.ex. "embreagem". */
+const keyword = (tipo: string | null) => norm(tipo ?? "").split(/[^a-z0-9]+/).filter((w) => w.length >= 5).sort((a, b) => b.length - a.length)[0];
+const significant = (code: string) => code.replace(/[^0-9a-z]/gi, "").length >= 6;
+
 function certainty(sources: number, catalogHits: number, mainFound: boolean) {
   const reasons: string[] = [];
   if (mainFound) reasons.push("O número principal existe no catálogo do Mercado Livre");
@@ -51,17 +56,24 @@ export async function POST(request: NextRequest) {
 
     // Confere cada número encontrado no catálogo do ML (evidência independente do Google)
     const a = gem.analysis;
-    const codes = [...new Set([a.numero_peca_principal, ...(a.outros_numeros ?? []).map((n) => n.numero)].filter((c): c is string => !!c))].slice(0, 6);
+    const codes = [...new Set([a.numero_peca_principal, ...(a.outros_numeros ?? []).map((n) => n.numero)].filter((c): c is string => !!c && significant(c)))].slice(0, 6);
     let catalog: CatalogHit[] = [];
     const token = await getAccessToken(supabase);
     if (token) catalog = await Promise.all(codes.map((c) => lookupPartNumber(token, c.replace(/\s+/g, ""))));
 
-    const mainFound = catalog.some((c) => c.exact && c.code === a.numero_peca_principal?.replace(/\s+/g, ""));
+    // Só vale o que o ML reconhece como número de peça E é do mesmo tipo de peça
+    const kw = keyword(a.tipo_peca);
+    catalog = catalog.map((c) => {
+      const relevante = c.exact && (!kw || c.products.some((p) => norm(p.name).includes(kw)));
+      return { ...c, relevante, ignorado: c.exact && !relevante ? "existe no catálogo, mas é outro tipo de peça (ignorado)" : undefined };
+    });
+
+    const mainFound = catalog.some((c) => c.relevante && c.code === a.numero_peca_principal?.replace(/\s+/g, ""));
     const result = {
       analysis: a,
       sources: gem.sources,
       catalog,
-      certeza: certainty(gem.sources.length, catalog.filter((c) => c.exact).length, mainFound),
+      certeza: certainty(gem.sources.length, catalog.filter((c) => c.relevante).length, mainFound),
       model: gem.model,
       buscaWeb: gem.grounded,
       tentativas: gem.tentativas,

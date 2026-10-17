@@ -28,17 +28,7 @@ export type GeminiResult = {
   tentativas: { model: string; grounded: boolean; status: number }[];
 };
 
-const PROMPT = `Você é especialista em autopeças brasileiras. As fotos mostram a MESMA peça automotiva, de estoque antigo, sem informação nenhuma sobre ela.
-Leia o que está gravado ou impresso na peça, pesquise na web (anúncios, catálogos de fabricantes) e identifique-a.
-
-Regras:
-- Não invente códigos, medidas nem aplicações. Se não souber, use null ou [].
-- "confirmado" em cada aplicação só pode ser true se uma fonte da web sustenta isso.
-- Preço: faixa de mercado para a peça AVULSA nova (não kit), em reais; use null se não achar.
-- Diferencie número de peça do fabricante de códigos de lote/composto gravados na peça.
-
-Responda SOMENTE com um JSON válido (sem texto antes ou depois) neste formato:
-{
+const SCHEMA = `{
   "tipo_peca": string|null,
   "marca": string|null,
   "textos_gravados": string[],
@@ -51,6 +41,28 @@ Responda SOMENTE com um JSON válido (sem texto antes ou depois) neste formato:
   "categoria_sugerida_texto": string|null,
   "duvidas": string[]
 }`;
+
+function buildPrompt(grounded: boolean) {
+  return `Você é especialista em autopeças brasileiras. As fotos mostram a MESMA peça automotiva, de estoque antigo, sem informação nenhuma sobre ela.
+
+Regras gerais:
+- Transcreva em "textos_gravados" tudo o que estiver gravado ou impresso na peça (marca, códigos, lote, composto da lona).
+- Não invente códigos, medidas nem aplicações. Na dúvida, use null ou [].
+- NÃO estime diâmetro e NÃO conte estrias a partir da foto: só informe esses valores se uma fonte confirmar; senão null.
+- Códigos de lote, data ou composto da lona (ex.: "2050", "RD/77", "03 19") NÃO são número de peça: não os coloque em numero_peca_principal nem em outros_numeros.
+${
+  grounded
+    ? `- Pesquise na web (anúncios, catálogos de fabricantes) para achar o número de peça do fabricante, os cruzamentos, as aplicações e o preço.
+- "confirmado" em cada aplicação só pode ser true se uma fonte da web sustenta isso.
+- Preço: faixa de mercado para a peça AVULSA nova (não kit), em reais; null se não achar.`
+    : `- ATENÇÃO: nesta chamada você NÃO tem acesso à web. Responda só com o que é legível nas fotos.
+- Deixe numero_peca_principal, outros_numeros, aplicacoes e preco vazios/null, a menos que o número de peça esteja gravado e legível na peça.
+- Em "duvidas", liste o que precisaria ser pesquisado (número de peça, aplicação, medidas).`
+}
+
+Responda SOMENTE com um JSON válido (sem texto antes ou depois) neste formato:
+${SCHEMA}`;
+}
 
 function extractJson(text: string): PartAnalysis | null {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
@@ -94,7 +106,7 @@ async function generate(model: string, images: { mime: string; data: string }[],
         {
           role: "user",
           parts: [
-            { text: notes ? `${PROMPT}\n\nInformação do vendedor: ${notes}` : PROMPT },
+            { text: notes ? `${buildPrompt(grounded)}\n\nInformação do vendedor: ${notes}` : buildPrompt(grounded) },
             ...images.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } })),
           ],
         },
@@ -107,15 +119,22 @@ async function generate(model: string, images: { mime: string; data: string }[],
   return { res, body };
 }
 
-/** Tenta cada modelo (com busca na web e, se faltar cota, sem ela) até algum responder. */
+/**
+ * Passo 1: tenta todos os modelos COM busca na web (qualquer um com cota serve).
+ * Passo 2: só se nenhum tiver, tenta sem a busca, e a IA é instruída a não chutar.
+ */
 export async function identifyPart(images: { mime: string; data: string }[], notes?: string): Promise<GeminiResult> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Defina GEMINI_API_KEY");
 
+  const models = await candidateModels(key);
+  const dead = new Set<string>(); // 404/400: modelo indisponível
   const tentativas: GeminiResult["tentativas"] = [];
   let lastError = "";
-  for (const model of await candidateModels(key)) {
-    for (const grounded of [true, false]) {
+
+  for (const grounded of [true, false]) {
+    for (const model of models) {
+      if (dead.has(model)) continue;
       const { res, body } = await generate(model, images, notes, grounded);
       tentativas.push({ model, grounded, status: res.status });
       if (res.ok) {
@@ -128,7 +147,7 @@ export async function identifyPart(images: { mime: string; data: string }[], not
         return { analysis: extractJson(text), text, sources, model, grounded, tentativas };
       }
       lastError = `Gemini ${res.status} (${model}): ${JSON.stringify(body?.error ?? body).slice(0, 300)}`;
-      if (res.status !== 429) break; // 404/400: este modelo não serve; só 429 vale tentar sem a busca na web
+      if (res.status !== 429) dead.add(model);
     }
   }
   throw new Error(`${lastError} | tentativas: ${tentativas.map((t) => `${t.model}${t.grounded ? "+web" : ""}=${t.status}`).join(", ")}. Veja https://ai.dev/rate-limit`);

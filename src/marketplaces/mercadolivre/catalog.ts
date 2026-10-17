@@ -10,6 +10,9 @@ export type CatalogHit = {
   queryType: string | null;
   total: number;
   exact: boolean;
+  /** o produto achado é do mesmo tipo de peça que a IA identificou (evita falsos positivos) */
+  relevante?: boolean;
+  ignorado?: string;
   products: { id: string; name: string; brand: string; partNumber: string; status: string; diameter: string; category: string }[];
 };
 
