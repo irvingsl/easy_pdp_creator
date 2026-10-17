@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
 import { mlPost } from "@/marketplaces/mercadolivre/oauth";
+import { analisarValidacao } from "@/marketplaces/mercadolivre/listing";
 import { prepararAnuncio } from "@/marketplaces/mercadolivre/preparar";
 
 export const maxDuration = 60;
@@ -25,7 +26,8 @@ export async function POST(request: NextRequest) {
     const obrigatorios = p.atributosCategoria
       .filter((a) => a.tags?.required || a.tags?.catalog_required)
       .map((a) => ({ id: a.id, nome: a.name, enviado: p.payload.attributes.some((x) => x.id === a.id) }));
-    return NextResponse.json({ status: res.status, ok: res.ok, fotoPrincipalOk: p.fotoPrincipalOk, resposta: res.body ?? "(sem corpo: validação passou)", obrigatorios, payload: p.payload });
+    const analise = analisarValidacao(res);
+    return NextResponse.json({ status: res.status, ok: res.ok, ...analise, fotoPrincipalOk: p.fotoPrincipalOk, resposta: res.body ?? "(sem corpo: validação passou)", obrigatorios, payload: p.payload });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "falha" }, { status: 500 });
   }

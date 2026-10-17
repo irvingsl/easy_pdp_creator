@@ -50,7 +50,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
     if (!error) router.refresh();
   }
 
-  const [ml, setMl] = useState<{ categorias?: { id: string; nome: string; caminho: string }[]; status?: number; resposta?: unknown; fotoPrincipalOk?: boolean; obrigatorios?: { id: string; nome: string; enviado: boolean }[]; payload?: unknown; error?: string } | null>(null);
+  const [ml, setMl] = useState<{ categorias?: { id: string; nome: string; caminho: string }[]; status?: number; resposta?: unknown; aceito?: boolean; erros?: string[]; avisos?: string[]; fotoPrincipalOk?: boolean; obrigatorios?: { id: string; nome: string; enviado: boolean }[]; payload?: unknown; error?: string } | null>(null);
 
   async function chamarML(sugerir: boolean) {
     if (!r) return;
@@ -173,9 +173,9 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
                 {c.id} · {c.caminho}
               </button>
             ))}
-            <select className={inputBase} value={r.condicao ?? "used"} onChange={(e) => set("condicao", e.target.value as "new" | "used")}>
-              <option value="used">Condição: usado</option>
+            <select className={inputBase} value={r.condicao ?? "new"} onChange={(e) => set("condicao", e.target.value as "new" | "used")}>
               <option value="new">Condição: novo</option>
+              <option value="used">Condição: usado</option>
             </select>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {(["altura", "largura", "comprimento", "peso"] as const).map((k) => (
@@ -211,7 +211,11 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
             {ml?.error && <p className="text-red-600">{ml.error}</p>}
             {ml?.status !== undefined && (
               <div className="flex flex-col gap-2">
-                <p>{ml.status === 200 || ml.status === 201 ? "✓ O ML aceitou o anúncio" : `O ML apontou problemas (HTTP ${ml.status})`}</p>
+                <p className={ml.aceito ? "text-green-700 dark:text-green-400" : "text-red-600"}>
+                  {ml.aceito ? (ml.avisos?.length ? "✓ O ML aceitou o anúncio, com avisos" : "✓ O ML aceitou o anúncio") : "✗ O ML reprovou o anúncio"}
+                </p>
+                {!!ml.erros?.length && <ul className="list-disc pl-5 text-red-600">{ml.erros.map((m, i) => <li key={i}>{m}</li>)}</ul>}
+                {!!ml.avisos?.length && <ul className="list-disc pl-5 text-xs text-amber-700 dark:text-amber-300">{ml.avisos.map((m, i) => <li key={i}>{m}</li>)}</ul>}
                 {ml.fotoPrincipalOk === false && <p className="text-xs text-amber-700 dark:text-amber-300">A foto principal não tem fundo branco: defina outra como principal nas fotos.</p>}
                 {ml.obrigatorios?.some((o) => !o.enviado) && (
                   <p className="text-xs text-amber-700 dark:text-amber-300">Obrigatórios ainda não preenchidos: {ml.obrigatorios.filter((o) => !o.enviado).map((o) => o.nome).join(", ")}</p>

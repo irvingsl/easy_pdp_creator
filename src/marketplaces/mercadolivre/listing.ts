@@ -49,23 +49,32 @@ export function montarAnuncio(opts: {
   if (numero) attrs.push({ id: "PART_NUMBER", value_name: numero });
   const tipoVeiculo = atributosCategoria.find((a) => a.id === "VEHICLE_TYPE")?.values?.find((v) => /carro|caminhonete/.test(norm(v.name)));
   if (tipoVeiculo) attrs.push({ id: "VEHICLE_TYPE", value_id: tipoVeiculo.id });
-  if (e) {
-    if (e.altura) attrs.push({ id: "PACKAGE_HEIGHT", value_name: `${e.altura} cm` });
-    if (e.largura) attrs.push({ id: "PACKAGE_WIDTH", value_name: `${e.largura} cm` });
-    if (e.comprimento) attrs.push({ id: "PACKAGE_LENGTH", value_name: `${e.comprimento} cm` });
-    if (e.peso) attrs.push({ id: "PACKAGE_WEIGHT", value_name: `${e.peso} g` });
-  }
+  // O ML ignora PACKAGE_* nos atributos ("not modifiable"); as medidas de envio vão em shipping.dimensions ("AxLxC,peso")
+  const num = (v: string) => v.replace(",", ".").trim();
+  const dimensions = e?.altura && e.largura && e.comprimento && e.peso ? `${num(e.altura)}x${num(e.largura)}x${num(e.comprimento)},${num(e.peso)}` : undefined;
   return {
-    family_name: r.titulo,
+    family_name: r.titulo.trim(),
     category_id: categoria,
     price: r.preco ?? 0,
     currency_id: "BRL",
     available_quantity: 1,
     buying_mode: "buy_it_now",
-    condition: r.condicao ?? "used",
+    condition: r.condicao ?? "new",
     listing_type_id: "gold_special",
     pictures: opts.fotos.map((source) => ({ source })),
     attributes: attrs,
-    shipping: { mode: "me2", local_pick_up: false, free_shipping: false },
+    shipping: { mode: "me2", local_pick_up: false, free_shipping: false, ...(dimensions ? { dimensions } : {}) },
   };
+}
+
+type Causa = { type?: string; code?: string; message?: string };
+
+/** /items/validate responde HTTP 400 mesmo quando só há avisos: só "error" reprova. */
+export function analisarValidacao(res: { ok: boolean; status: number; body: unknown }) {
+  const causas = ((res.body as { cause?: Causa[] } | null)?.cause ?? []).filter((c) => c && typeof c === "object");
+  const erros = causas.filter((c) => c.type === "error").map((c) => c.message ?? c.code ?? "erro");
+  const avisos = causas.filter((c) => c.type !== "error").map((c) => c.message ?? c.code ?? "aviso");
+  // sem causas legíveis e com status de erro: reprovado por segurança
+  const aceito = res.ok || (causas.length > 0 && erros.length === 0);
+  return { aceito, erros, avisos };
 }

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessToken, getAccount } from "@/marketplaces/mercadolivre/accounts";
 import { mlPost } from "@/marketplaces/mercadolivre/oauth";
+import { analisarValidacao } from "@/marketplaces/mercadolivre/listing";
 import { prepararAnuncio } from "@/marketplaces/mercadolivre/preparar";
 
 export const maxDuration = 60;
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     const v = await mlPost("/items/validate", token, payload);
-    if (!v.ok) return NextResponse.json({ error: "o Mercado Livre não aceitou o anúncio", etapa: "validacao", status: v.status, resposta: v.body }, { status: 422 });
+    if (!analisarValidacao(v).aceito) return NextResponse.json({ error: "o Mercado Livre não aceitou o anúncio", etapa: "validacao", status: v.status, resposta: v.body }, { status: 422 });
 
     const criado = await mlPost("/items", token, payload);
     const item = criado.body as { id?: string; permalink?: string; status?: string } | null;
