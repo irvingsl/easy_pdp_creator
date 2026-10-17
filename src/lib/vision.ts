@@ -16,9 +16,13 @@ type WebDetection = {
   pagesWithMatchingImages?: { url: string; pageTitle?: string }[];
 };
 
+/**
+ * Desligada por padrão: o Web Detection só acha cópias da MESMA imagem (útil para foto de catálogo ou de
+ * peça nova de fabricante), não produtos parecidos. Para ligar, defina GOOGLE_VISION_ENABLED=true.
+ */
 export async function buscaPorImagem(images: { data: string }[]): Promise<VisaoResult | null> {
   const key = process.env.GOOGLE_VISION_API_KEY;
-  if (!key) return null;
+  if (!key || process.env.GOOGLE_VISION_ENABLED !== "true") return null;
 
   const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${key}`, {
     method: "POST",
