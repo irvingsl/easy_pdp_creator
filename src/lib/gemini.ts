@@ -1,7 +1,7 @@
 const API = "https://generativelanguage.googleapis.com/v1beta";
 /** Preferidos, na ordem; depois completamos com o que a própria chave enxerga. */
-const PREFERRED = ["gemini-3.8-flash", "gemini-3.8-flash-lite"];
-const MAX_MODELS = 4;
+const PREFERRED = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
+const MAX_MODELS = 6;
 let lastGood: string | null = null;
 
 export type PartAnalysis = {
@@ -85,6 +85,39 @@ async function listModels(key: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/** Todos os modelos de texto que a chave enxerga (para diagnóstico). */
+export async function listAllModels(key: string): Promise<string[]> {
+  const res = await fetch(`${API}/models?pageSize=200`, { headers: { "x-goog-api-key": key } });
+  const body = (await res.json().catch(() => null)) as { models?: { name: string; supportedGenerationMethods?: string[] }[] } | null;
+  return (body?.models ?? [])
+    .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+    .map((m) => m.name.replace(/^models\//, ""))
+    .filter((n) => n.startsWith("gemini-") && !/image|tts|live|audio|embedding|robotics|computer|deep-research|vision/.test(n))
+    .sort();
+}
+
+/** Uma pergunta curta que exige busca na web; diz se o modelo respondeu e se usou a busca. */
+export async function probeGrounding(model: string) {
+  const res = await fetch(`${API}/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: "Pesquise na web: qual é o número de peça LuK do disco de embreagem do Chevrolet Opala 4 cilindros? Responda em uma frase." }] }],
+      tools: [{ google_search: {} }],
+    }),
+  });
+  const body = await res.json().catch(() => null);
+  const cand = body?.candidates?.[0];
+  return {
+    model,
+    status: res.status,
+    comBusca: !!(cand?.groundingMetadata?.groundingChunks?.length || cand?.groundingMetadata?.webSearchQueries?.length),
+    fontes: cand?.groundingMetadata?.groundingChunks?.length ?? 0,
+    resposta: ((cand?.content?.parts ?? []) as { text?: string }[]).map((p) => p.text ?? "").join("").slice(0, 200),
+    erro: res.ok ? "" : String(body?.error?.message ?? "").slice(0, 200),
+  };
 }
 
 async function candidateModels(key: string): Promise<string[]> {

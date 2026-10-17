@@ -102,6 +102,7 @@ export default async function ContaPage(props: PageProps<"/conta">) {
         <section className="flex flex-col gap-5">
           <h2 className="font-medium">Teste da API (spike)</h2>
           <a href="/conta/validar" className="text-sm underline">Validar um anúncio de teste (sem publicar) →</a>
+          <a href="/conta/gemini" className="text-sm underline">Gemini: testar busca na web por modelo →</a>
           <form className="flex flex-col gap-2">
             <div className="flex gap-2">
               <input name="q" defaultValue={q} placeholder="código OEM ou palavras-chave" className={inputBase} />
