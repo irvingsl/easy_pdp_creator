@@ -65,6 +65,18 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
     }
   }
 
+  async function confirmarCaracteristica(c: { nome: string; valor: string; unidade: string | null }) {
+    const supabase = createClient();
+    const { data } = await supabase.from("produtos").select("dados_confirmados").eq("id", produtoId).single();
+    const atual = (data?.dados_confirmados ?? {}) as { caracteristicas?: { nome: string; valor: string; unidade?: string }[] };
+    const outras = (atual.caracteristicas ?? []).filter((x) => x.nome.toLowerCase() !== c.nome.toLowerCase());
+    await supabase
+      .from("produtos")
+      .update({ dados_confirmados: { ...atual, caracteristicas: [...outras, { nome: c.nome, valor: c.valor, unidade: c.unidade ?? undefined }] } })
+      .eq("id", produtoId);
+    router.refresh();
+  }
+
   async function usarComoOem(code: string) {
     await createClient().from("produtos").update({ oem_code: code }).eq("id", produtoId);
     router.refresh();
@@ -168,7 +180,10 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
                 {a.caracteristicas.map((c, i) => (
                   <li key={i}>
                     {c.nome}: <strong>{c.valor}{c.unidade ? ` ${c.unidade}` : ""}</strong>{" "}
-                    <span className="text-gray-500">({ORIGEM[c.origem] ?? c.origem}{c.como ? `: ${c.como}` : ""}; confiança {c.confianca})</span>
+                    <span className="text-gray-500">({ORIGEM[c.origem] ?? c.origem}{c.como ? `: ${c.como}` : ""}; confiança {c.confianca})</span>{" "}
+                    <button onClick={() => confirmarCaracteristica(c)} className="rounded-md border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">
+                      Confirmar/editar
+                    </button>
                   </li>
                 ))}
               </ul>

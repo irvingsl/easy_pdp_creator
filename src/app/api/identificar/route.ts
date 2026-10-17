@@ -4,6 +4,7 @@ import { identifyPart } from "@/lib/gemini";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
 import { lookupPartNumber, type CatalogHit } from "@/marketplaces/mercadolivre/catalog";
 import { BUCKET_ORIGINAIS } from "@/domain/types";
+import { notasParaIA, type DadosConfirmados } from "@/domain/dados-confirmados";
 
 export const maxDuration = 60;
 
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
 
   const { data: produto } = await supabase
     .from("produtos")
-    .select("id, oem_code, produto_fotos(path_original, ordem)")
+    .select("id, oem_code, dados_confirmados, produto_fotos(path_original, ordem)")
     .eq("id", produtoId)
     .maybeSingle();
   if (!produto) return NextResponse.json({ error: "produto não encontrado" }, { status: 404 });
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
         return { mime: "image/jpeg", data: Buffer.from(await data.arrayBuffer()).toString("base64") };
       }),
     );
-    const gem = await identifyPart(images, produto.oem_code ? `Código informado: ${produto.oem_code}` : undefined);
+    const gem = await identifyPart(images, notasParaIA(produto.oem_code, produto.dados_confirmados as DadosConfirmados | null));
     if (!gem.analysis) {
       return NextResponse.json({ error: "A IA não devolveu um JSON válido", raw: gem.text, sources: gem.sources }, { status: 502 });
     }
