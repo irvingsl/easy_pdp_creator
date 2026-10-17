@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { PartAnalysis } from "@/lib/gemini";
 import type { CatalogHit } from "@/marketplaces/mercadolivre/catalog";
 import { CopyBlock } from "./copy-block";
+import type { VisaoResult } from "@/lib/vision";
 import { btnPrimary } from "./ui";
 
 export type Identificacao = {
@@ -17,6 +18,8 @@ export type Identificacao = {
   model: string;
   buscaWeb?: boolean;
   consultas?: string[];
+  visao?: VisaoResult | null;
+  cego?: boolean;
   tentativas?: { model: string; grounded: boolean; status: number }[];
   geradoEm: string;
 };
@@ -46,6 +49,7 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
   const [res, setRes] = useState<Identificacao | null>(inicial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [cego, setCego] = useState(false);
 
   async function identificar() {
     setBusy(true);
@@ -54,7 +58,7 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
       const r = await fetch("/api/identificar", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ produtoId }),
+        body: JSON.stringify({ produtoId, cego }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
@@ -92,6 +96,10 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
           {busy ? "Analisando (pode levar até 1 min)..." : res ? "Identificar de novo" : "Identificar com IA"}
         </button>
       </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={cego} onChange={(e) => setCego(e.target.checked)} />
+        Teste às cegas: ignorar os dados confirmados nesta identificação
+      </label>
       <p className="text-xs text-gray-500">As fotos originais (até 4) são enviadas ao Google (Gemini), que também pesquisa na web. No plano gratuito cada identificação usa 1 das 20 consultas diárias (5 por minuto).</p>
       {error && <p className="break-words text-sm text-red-600">{error}</p>}
 
@@ -140,6 +148,27 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
               </div>
             )}
           </div>
+
+          {res.cego && <p className="text-xs text-gray-500">Identificação feita às cegas (sem os dados confirmados).</p>}
+
+          {res.visao && (
+            <details>
+              <summary className="cursor-pointer font-medium">
+                Busca por imagem do Google ({res.visao.erro ? "erro" : `${res.visao.paginas.length} páginas`})
+              </summary>
+              {res.visao.erro && <p className="mt-1 break-words text-red-600">{res.visao.erro}</p>}
+              {res.visao.palpites.length > 0 && <p className="mt-1">Melhor palpite: {res.visao.palpites.join("; ")}</p>}
+              {res.visao.entidades.length > 0 && <p className="text-gray-500">Entidades: {res.visao.entidades.map((e) => e.descricao).join(" · ")}</p>}
+              <ul className="mt-1 list-disc pl-5">
+                {res.visao.paginas.map((p) => (
+                  <li key={p.url}>
+                    <a href={p.url} target="_blank" rel="noreferrer" className="underline">{p.titulo || p.url}</a>
+                    {p.fotos > 1 ? <span className="text-gray-500"> (casou com {p.fotos} fotos)</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
 
           {res.narrativa && (
             <details open>
