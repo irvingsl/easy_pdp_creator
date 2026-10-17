@@ -16,6 +16,7 @@ export type Identificacao = {
   certeza: { level: "alta" | "média" | "baixa"; reasons: string[] };
   model: string;
   buscaWeb?: boolean;
+  consultas?: string[];
   tentativas?: { model: string; grounded: boolean; status: number }[];
   geradoEm: string;
 };
@@ -102,8 +103,11 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
         <div className="flex flex-col gap-4 text-sm">
           {res.buscaWeb === false && (
             <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-              A busca na web ficou indisponível (cota do Gemini). Esta resposta veio só das fotos, sem fontes. Trate tudo como suposição até confirmar.
+              Nenhuma pesquisa na web foi feita nesta resposta (cota indisponível ou a IA decidiu não pesquisar). Ela veio só das fotos, sem fontes: trate preço e aplicações como suposição.
             </p>
+          )}
+          {res.buscaWeb && res.consultas && res.consultas.length > 0 && (
+            <p className="text-xs text-gray-500">Pesquisas feitas: {res.consultas.join(" · ")}</p>
           )}
           <div className="flex flex-col gap-1">
             <span className={`self-start rounded-full px-3 py-1 text-xs font-medium ${BADGE[res.certeza.level]}`}>

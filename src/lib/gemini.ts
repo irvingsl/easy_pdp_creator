@@ -53,6 +53,9 @@ export type GeminiResult = {
   model: string;
   /** false quando a busca na web ficou indisponível (cota) e a IA respondeu só pelas fotos */
   grounded: boolean;
+  /** true só se o Gemini realmente pesquisou (ferramenta ligada não garante que ele use) */
+  pesquisou: boolean;
+  consultas: string[];
   tentativas: { model: string; grounded: boolean; status: number }[];
 };
 
@@ -117,7 +120,7 @@ divergirem, mostre as duas versões.`
 gravado, aplicações, preço). Preencha só o que vem das fotos, gere "termos_busca" para o vendedor pesquisar e
 liste em "duvidas" o que precisa ser confirmado.`
 }
-Passo 5 - Preço. Informe faixa de preço apenas para o item no MESMO formato das fotos (se é kit, preço de kit;
+Passo 5 - Preço. Só informe preço se você realmente o encontrou em uma página pesquisada agora; nunca cite uma URL que você não obteve na pesquisa e nunca estime preço de memória (nesse caso, null). Informe faixa de preço apenas para o item no MESMO formato das fotos (se é kit, preço de kit;
 se é unidade, preço de unidade). Se só achar preço em outro formato, diga isso e não misture. Indique a
 condição (novo ou usado) e de onde veio cada preço. Sem fonte, use null.
 Passo 6 - O que falta. Diga que foto adicional ajudaria (ex.: "close da região X", "o outro lado", "a etiqueta")
@@ -248,7 +251,9 @@ export async function identifyPart(images: { mime: string; data: string }[], not
           .filter((c) => c.web)
           .map((c) => ({ title: c.web!.title, uri: c.web!.uri }));
         const { narrativa, analysis } = splitResponse(text);
-        return { analysis, narrativa, text, sources, model, grounded, tentativas };
+        const consultas = ((cand?.groundingMetadata?.webSearchQueries ?? []) as string[]).slice(0, 10);
+        const pesquisou = grounded && (sources.length > 0 || consultas.length > 0);
+        return { analysis, narrativa, text, sources, model, grounded, pesquisou, consultas, tentativas };
       }
       lastError = `Gemini ${res.status} (${model}): ${JSON.stringify(body?.error ?? body).slice(0, 300)}`;
       if (res.status !== 429) dead.add(model);

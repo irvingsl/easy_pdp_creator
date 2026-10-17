@@ -85,7 +85,8 @@ export async function POST(request: NextRequest) {
       catalog,
       certeza: certainty(gem.sources.length, catalog.filter((c) => c.relevante).length, mainFound),
       model: gem.model,
-      buscaWeb: gem.grounded,
+      buscaWeb: gem.pesquisou,
+      consultas: gem.consultas,
       tentativas: gem.tentativas,
       geradoEm: new Date().toISOString(),
     };
