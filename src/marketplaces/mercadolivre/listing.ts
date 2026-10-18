@@ -52,7 +52,15 @@ export function montarAnuncio(opts: {
   // O ML ignora PACKAGE_* nos atributos ("not modifiable"); as medidas de envio vão em shipping.dimensions ("AxLxC,peso")
   const num = (v: string) => v.replace(",", ".").trim();
   const dimensions = e?.altura && e.largura && e.comprimento && e.peso ? `${num(e.altura)}x${num(e.largura)}x${num(e.comprimento)},${num(e.peso)}` : undefined;
+  const g = r.garantia;
+  const sale_terms = g && g.tipo !== "sem"
+    ? [
+        { id: "WARRANTY_TYPE", value_name: g.tipo === "fabrica" ? "Garantia de fábrica" : "Garantia do vendedor" },
+        ...(g.dias?.trim() ? [{ id: "WARRANTY_TIME", value_name: `${g.dias.trim()} dias` }] : []),
+      ]
+    : [];
   return {
+    ...(sale_terms.length ? { sale_terms } : {}),
     family_name: r.titulo.trim(),
     category_id: categoria,
     price: r.preco ?? 0,

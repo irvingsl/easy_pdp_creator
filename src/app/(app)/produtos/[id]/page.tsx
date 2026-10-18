@@ -5,6 +5,7 @@ import { BUCKET_ORIGINAIS, BUCKET_PROCESSADAS } from "@/domain/types";
 import { DeleteProdutoButton } from "@/components/delete-produto-button";
 import { ProdutoFotos, type FotoView } from "@/components/produto-fotos";
 import { IdentificarIA, type Identificacao } from "@/components/identificar-ia";
+import { AnuncioAtualizar } from "@/components/anuncio-atualizar";
 import { AnuncioQualidade } from "@/components/anuncio-qualidade";
 import { DadosConfirmadosForm } from "@/components/dados-confirmados";
 import { RascunhoAnuncio } from "@/components/rascunho-anuncio";
@@ -60,6 +61,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
                 <span className="text-xs text-gray-500">{new Date(a.criado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                 {a.permalink && <a className="text-indigo-600 underline" href={String(a.permalink)} target="_blank" rel="noreferrer">Abrir no ML</a>}
                 {a.external_id && <AnuncioQualidade itemId={a.external_id} />}
+                {a.external_id && <AnuncioAtualizar produtoId={produto.id} itemId={a.external_id} />}
               </li>
             ))}
           </ul>

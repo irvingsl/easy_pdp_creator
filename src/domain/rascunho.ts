@@ -10,6 +10,8 @@ export type Rascunho = {
   /** escolhas do vendedor para o Mercado Livre */
   categoria_id?: string;
   condicao?: "new" | "used";
+  /** garantia oferecida pelo vendedor; sem isso o anúncio sai "sem garantia" */
+  garantia?: { tipo: "vendedor" | "fabrica" | "sem"; dias?: string };
   embalagem?: { altura: string; largura: string; comprimento: string; peso: string };
   geradoEm?: string;
 };
