@@ -75,11 +75,26 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
     }
   }
 
-  type Calc = { preco?: number; comissao?: number | null; detalhes?: { percentage_fee?: number; fixed_fee?: number } | null; freteTabela?: number | null; brutos?: unknown; error?: string };
+  type Calc = { preco?: number; comissao?: number | null; detalhes?: { percentage_fee?: number; fixed_fee?: number } | null; freteTabela?: number | null; reputacao?: { nivel: string | null; status: string | null } | null; candidatosFrete?: { campo: string; valor: number }[]; brutos?: unknown; error?: string };
   const [calc, setCalc] = useState<Calc | null>(null);
   const [freteReal, setFreteReal] = useState("");
-  // desconto de reputação no frete (visto no ML: tabela R$ 38,10, você paga R$ 19,05)
-  const [descFrete, setDescFrete] = useState("50");
+  // Desconto de frete do vendedor: depende da reputação de cada conta, então não há valor padrão.
+  // Fica guardado neste aparelho até o app ler o valor direto do ML.
+  const [descFrete, setDescFreteState] = useState(() => {
+    try {
+      return window.localStorage.getItem("descFrete") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const setDescFrete = (v: string) => {
+    setDescFreteState(v);
+    try {
+      window.localStorage.setItem("descFrete", v);
+    } catch {
+      /* sem armazenamento: só vale nesta tela */
+    }
+  };
 
   async function calcular() {
     if (!r) return;
@@ -294,8 +309,9 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
               const com = calc.comissao;
               const tabela = calc.freteTabela;
               const desc = Math.min(100, Math.max(0, Number(descFrete.replace(",", ".")) || 0));
+              const temDesconto = desc > 0;
               const informado = freteReal.trim() ? Number(freteReal.replace(",", ".")) : NaN;
-              const pago = Number.isFinite(informado) ? informado : tabela != null ? Math.round(tabela * (100 - desc)) / 100 : null;
+              const pago = Number.isFinite(informado) ? informado : tabela != null && temDesconto ? Math.round(tabela * (100 - desc)) / 100 : null;
               const liquido = (frete: number | null | undefined) => (com == null || frete == null ? "?" : reais(preco - com - frete));
               const linhas: [string, string, boolean?][] = [
                 ["Preço de venda", reais(preco)],
@@ -303,8 +319,12 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
                 ["Sobra sem contar o frete", liquido(0)],
                 ["Frete de tabela (sem desconto)", tabela == null ? "não obtido" : `− ${reais(tabela)}`],
                 ["Sobra pagando o frete de tabela", liquido(tabela)],
-                [Number.isFinite(informado) ? "Frete que você informou" : `Frete com seu desconto (${desc}%)`, pago == null ? "não obtido" : `− ${reais(pago)}`],
-                ["Sobra com o seu frete", liquido(pago), true],
+                ...(pago != null
+                  ? ([
+                      [Number.isFinite(informado) ? "Frete que você informou" : `Frete com seu desconto (${desc}%)`, `− ${reais(pago)}`],
+                      ["Sobra com o seu frete", liquido(pago), true],
+                    ] as [string, string, boolean?][])
+                  : []),
               ];
               return (
                 <div className="flex flex-col gap-2">
@@ -325,6 +345,14 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
                       <input className={inputBase} inputMode="decimal" placeholder="ex.: 19,05" value={freteReal} onChange={(e) => setFreteReal(e.target.value)} />
                     </label>
                   </div>
+                  {pago == null && <p className="text-xs text-gray-500">O ML ainda não nos diz o desconto de frete da sua conta. Informe o seu percentual ou o valor que o ML mostra (fica guardado neste aparelho).</p>}
+                  {calc.reputacao && <p className="text-xs text-gray-500">Reputação da conta: {calc.reputacao.nivel ?? "sem nível"}{calc.reputacao.status ? ` · ${calc.reputacao.status}` : ""}</p>}
+                  {!!calc.candidatosFrete?.length && (
+                    <details className="text-xs text-gray-500">
+                      <summary>Valores de custo/desconto que o ML devolveu</summary>
+                      <ul className="list-disc pl-5">{calc.candidatosFrete.map((c) => <li key={c.campo}><span className="font-mono">{c.campo}</span>: {c.valor}</li>)}</ul>
+                    </details>
+                  )}
                   <CopyBlock text={JSON.stringify(calc.brutos, null, 2)} label="Copiar resposta do ML" />
                 </div>
               );

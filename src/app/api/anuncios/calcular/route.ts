@@ -39,7 +39,20 @@ export async function POST(request: NextRequest) {
     if (typeof cov?.list_cost === "number") freteTabela = cov.list_cost;
   }
 
+  // Reputação do vendedor (define o desconto de frete) e campos numéricos de custo/desconto que o ML devolver no envio
+  const usuario = await mlGet(`/users/${conta.external_user_id}`, token);
+  const reputacao = (usuario.body as { seller_reputation?: { level_id?: string | null; power_seller_status?: string | null } } | null)?.seller_reputation;
+  const candidatosFrete: { campo: string; valor: number }[] = [];
+  const varrer = (no: unknown, caminho: string) => {
+    if (Array.isArray(no)) no.forEach((n, i) => varrer(n, `${caminho}[${i}]`));
+    else if (no && typeof no === "object") for (const [k, v] of Object.entries(no)) varrer(v, caminho ? `${caminho}.${k}` : k);
+    else if (typeof no === "number" && /discount|seller|cost|charge|fee|price/i.test(caminho)) candidatosFrete.push({ campo: caminho, valor: no });
+  };
+  if (envio?.body) varrer(envio.body, "");
+
   return NextResponse.json({
+    reputacao: reputacao ? { nivel: reputacao.level_id ?? null, status: reputacao.power_seller_status ?? null } : null,
+    candidatosFrete,
     preco: r.preco,
     comissao: fee?.sale_fee_amount ?? null,
     detalhes: fee?.sale_fee_details ?? null,
