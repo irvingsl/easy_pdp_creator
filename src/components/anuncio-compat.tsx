@@ -5,7 +5,7 @@ import { CopyBlock } from "./copy-block";
 import { btnPrimary, btnSecondary } from "./ui";
 
 type Familia = { marca: string; modelo: string; ano: number };
-type Previa = { existentes: Familia[]; ausentes: Familia[]; semAno: string[]; truncado: boolean };
+type Previa = { existentes: Familia[]; ausentes: Familia[]; semAno: string[]; modelosNaoEncontrados?: string[]; truncado: boolean };
 
 /** agrupa por marca/modelo para mostrar "Volkswagen Fusca 1973–1986" */
 const resumo = (lista: Familia[]) => {
@@ -80,7 +80,8 @@ export function AnuncioCompat({ produtoId, itemId }: { produtoId: string; itemId
             </div>
           )}
           {previa.semAno.length > 0 && <p className="text-xs text-amber-700 dark:text-amber-300">Sem ano informado (ficam de fora): {previa.semAno.join(", ")}.</p>}
-          {previa.truncado && <p className="text-xs text-amber-700 dark:text-amber-300">Havia combinações demais: enviei só as primeiras.</p>}
+          {!!previa.modelosNaoEncontrados?.length && <p className="text-xs text-amber-700 dark:text-amber-300">Modelos que não achei no catálogo com nenhuma grafia: {previa.modelosNaoEncontrados.join(", ")}. Confira o nome do modelo na lista do rascunho.</p>}
+          {previa.truncado && <p className="text-xs text-amber-700 dark:text-amber-300">Havia combinações demais: conferi só as primeiras 400. Reduza as faixas de anos.</p>}
           <button type="button" className={btnPrimary} disabled={busy || !previa.existentes.length} onClick={enviar}>
             {busy ? "Enviando…" : `Enviar ${previa.existentes.length} combinações ao ML`}
           </button>

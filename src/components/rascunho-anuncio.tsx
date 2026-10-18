@@ -236,7 +236,15 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque }: { produtoId: st
             )}
             {r.compatibilidade.map((c, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="flex-1">{c.veiculo}{c.anos ? ` ${c.anos}` : ""}</span>
+                <span className="flex flex-1 flex-wrap items-center gap-2">
+                  <span>{c.veiculo}</span>
+                  <input
+                    className="w-32 rounded border border-gray-300 bg-transparent px-2 py-1 text-xs dark:border-gray-700"
+                    placeholder="anos (ex.: 1973 a 1986)"
+                    value={c.anos ?? ""}
+                    onChange={(e) => set("compatibilidade", r.compatibilidade.map((x, j) => (j === i ? { ...x, anos: e.target.value || null } : x)))}
+                  />
+                </span>
                 <span className="text-xs text-gray-500">{ORIGEM[c.origem] ?? c.origem}</span>
                 {c.origem !== "confirmado" && (
                   <button type="button" className="text-xs text-indigo-600 underline" onClick={() => set("compatibilidade", r.compatibilidade.map((x, j) => (j === i ? { ...x, origem: "confirmado" } : x)))}>
