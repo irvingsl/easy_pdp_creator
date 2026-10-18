@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { TITULO_MAX, type Rascunho } from "@/domain/rascunho";
+import { GARANTIA_PADRAO, TITULO_MAX, type Rascunho } from "@/domain/rascunho";
 import { CopyBlock } from "./copy-block";
 import { btnPrimary, btnSecondary, inputBase } from "./ui";
 
@@ -240,14 +240,15 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
               <option value="new">Condição: novo</option>
               <option value="used">Condição: usado</option>
             </select>
+            <p className="text-xs text-gray-500">Garantia: a lei já dá 90 dias para bens duráveis (CDC, art. 26), por isso esse é o padrão. Você pode ampliar.</p>
             <div className="grid grid-cols-2 gap-2">
-              <select className={inputBase} value={r.garantia?.tipo ?? "sem"} onChange={(e) => set("garantia", { ...r.garantia, tipo: e.target.value as "vendedor" | "fabrica" | "sem" })}>
+              <select className={inputBase} value={(r.garantia ?? GARANTIA_PADRAO).tipo} onChange={(e) => set("garantia", { ...(r.garantia ?? GARANTIA_PADRAO), tipo: e.target.value as "vendedor" | "fabrica" | "sem" })}>
                 <option value="sem">Garantia: sem garantia</option>
                 <option value="vendedor">Garantia do vendedor</option>
                 <option value="fabrica">Garantia de fábrica</option>
               </select>
-              {r.garantia && r.garantia.tipo !== "sem" && (
-                <input className={inputBase} inputMode="numeric" placeholder="Dias de garantia (ex.: 90)" value={r.garantia.dias ?? ""} onChange={(e) => set("garantia", { ...r.garantia!, dias: e.target.value.replace(/\D/g, "") })} />
+              {(r.garantia ?? GARANTIA_PADRAO).tipo !== "sem" && (
+                <input className={inputBase} inputMode="numeric" placeholder="Dias de garantia (ex.: 90)" value={(r.garantia ?? GARANTIA_PADRAO).dias ?? ""} onChange={(e) => set("garantia", { ...(r.garantia ?? GARANTIA_PADRAO), dias: e.target.value.replace(/\D/g, "") })} />
               )}
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

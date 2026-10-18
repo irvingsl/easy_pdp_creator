@@ -1,5 +1,5 @@
 import { mlGet } from "./oauth";
-import type { Rascunho } from "@/domain/rascunho";
+import { GARANTIA_PADRAO, type Rascunho } from "@/domain/rascunho";
 import type { DadosConfirmados } from "@/domain/dados-confirmados";
 
 export type CategoriaSugerida = { id: string; nome: string; caminho: string };
@@ -52,7 +52,7 @@ export function montarAnuncio(opts: {
   // O ML ignora PACKAGE_* nos atributos ("not modifiable"); as medidas de envio vão em shipping.dimensions ("AxLxC,peso")
   const num = (v: string) => v.replace(",", ".").trim();
   const dimensions = e?.altura && e.largura && e.comprimento && e.peso ? `${num(e.altura)}x${num(e.largura)}x${num(e.comprimento)},${num(e.peso)}` : undefined;
-  const g = r.garantia;
+  const g = r.garantia ?? GARANTIA_PADRAO;
   const sale_terms = g && g.tipo !== "sem"
     ? [
         { id: "WARRANTY_TYPE", value_name: g.tipo === "fabrica" ? "Garantia de fábrica" : "Garantia do vendedor" },

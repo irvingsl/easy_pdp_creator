@@ -18,3 +18,6 @@ export type Rascunho = {
 
 /** Limite de caracteres do título no Mercado Livre. */
 export const TITULO_MAX = 60;
+
+/** Garantia legal (CDC art. 26): 90 dias para bens duráveis. Usada quando o vendedor não escolhe outra. */
+export const GARANTIA_PADRAO = { tipo: "vendedor", dias: "90" } as const;
