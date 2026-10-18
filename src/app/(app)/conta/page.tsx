@@ -83,7 +83,8 @@ export default async function ContaPage(props: PageProps<"/conta">) {
         anuncio = await mlGet(item.startsWith("MLBU") ? `/user-products/${encodeURIComponent(item)}` : `/items/${encodeURIComponent(item)}`, token);
         if (!anuncio.ok && item.startsWith("MLBU")) {
           // alguns produtos só aparecem pela busca de anúncios da família
-          anuncio = await mlGet(`/items/search?user_product_id=${encodeURIComponent(item)}`, token);
+          const porFamilia = await mlGet(`/items/search?user_product_id=${encodeURIComponent(item)}`, token);
+          if (porFamilia.ok) anuncio = porFamilia;
         }
       }
     }
