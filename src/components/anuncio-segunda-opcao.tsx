@@ -10,7 +10,7 @@ export function AnuncioSegundaOpcao({ produtoId, precoBase }: { produtoId: strin
   const router = useRouter();
   const [modo, setModo] = useState<"com" | "sem">("com");
   const [preco, setPreco] = useState("");
-  const [pausado, setPausado] = useState(true);
+  const [pausado, setPausado] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [obrigatorio, setObrigatorio] = useState<boolean | null>(null);
@@ -71,7 +71,7 @@ export function AnuncioSegundaOpcao({ produtoId, precoBase }: { produtoId: strin
       </div>
       {obrigatorio && <p className="text-xs text-amber-700 dark:text-amber-300">Neste preço o ML exige frete grátis: a opção sem frete grátis provavelmente será criada com frete grátis mesmo assim.</p>}
       <label className="flex items-center gap-2">
-        <input type="checkbox" checked={pausado} onChange={(e) => setPausado(e.target.checked)} /> Criar pausada
+        <input type="checkbox" checked={pausado} onChange={(e) => setPausado(e.target.checked)} /> Criar pausada (a opção só faz sentido ativa ao lado da outra)
       </label>
       <button type="button" className={btnPrimary} disabled={busy} onClick={criar}>{busy ? "Trabalhando…" : "Criar a opção"}</button>
       {msg && <p className="text-xs text-gray-600 dark:text-gray-400">{msg}</p>}
