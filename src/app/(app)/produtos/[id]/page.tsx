@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
+import { mlGet } from "@/marketplaces/mercadolivre/oauth";
 import { BUCKET_ORIGINAIS, BUCKET_PROCESSADAS } from "@/domain/types";
 import { DeleteProdutoButton } from "@/components/delete-produto-button";
 import { ProdutoFotos, type FotoView } from "@/components/produto-fotos";
@@ -29,6 +31,31 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
     .select("id, external_id, status, preco, criado_em, permalink:resposta_criacao->>permalink")
     .eq("produto_id", id)
     .order("criado_em", { ascending: false });
+
+  // O status gravado é o do momento da criação (o ML cria pausado enquanto baixa as fotos): busca o real no ML
+  const subStatus = new Map<string, string[]>();
+  if (anuncios?.length) {
+    try {
+      const token = await getAccessToken(supabase);
+      const ids = anuncios.map((a) => a.external_id).filter((x): x is string => !!x);
+      if (token && ids.length) {
+        const r = await mlGet(`/items?ids=${ids.join(",")}&attributes=id,status,sub_status`, token);
+        const lista = (Array.isArray(r.body) ? r.body : []) as { code?: number; body?: { id?: string; status?: string; sub_status?: string[] } }[];
+        for (const it of lista) {
+          const b = it.body;
+          if (it.code !== 200 || !b?.id || !b.status) continue;
+          subStatus.set(b.id, b.sub_status ?? []);
+          const a = anuncios.find((x) => x.external_id === b.id);
+          if (a && a.status !== b.status) {
+            await supabase.from("anuncios").update({ status: b.status, ultimo_sync_em: new Date().toISOString() }).eq("id", a.id);
+            a.status = b.status;
+          }
+        }
+      }
+    } catch {
+      /* sem conexão com o ML: mostra o que está gravado */
+    }
+  }
 
   const rascunho = (produto.rascunho as Rascunho | null) ?? null;
   const dc = (produto.dados_confirmados as DadosConfirmados | null) ?? {};
@@ -89,7 +116,10 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
             {anuncios.map((a) => (
               <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-mono">{a.external_id}</span>
-                <span className="text-gray-500">{a.status === "paused" ? "pausado" : a.status}</span>
+                <span className="text-gray-500">
+                  {{ paused: "pausado", active: "ativo", closed: "encerrado", under_review: "em revisão", payment_required: "pagamento pendente" }[a.status as string] ?? a.status}
+                  {a.external_id && subStatus.get(a.external_id)?.length ? ` (${subStatus.get(a.external_id)!.map((x) => ({ picture_download_pending: "baixando fotos", paused_by_seller: "pausado por você" } as Record<string, string>)[x] ?? x).join(", ")})` : ""}
+                </span>
                 <span>{a.preco != null ? Number(a.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : ""}</span>
                 <span className="text-xs text-gray-500">{new Date(a.criado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                 {a.permalink && <a className="text-indigo-600 underline" href={String(a.permalink)} target="_blank" rel="noreferrer">Abrir no ML</a>}
