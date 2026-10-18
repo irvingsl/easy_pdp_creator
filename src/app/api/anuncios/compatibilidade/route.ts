@@ -1,49 +1,83 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { normalizarVeiculos } from "@/lib/gemini";
+import { gravarUso, usoStore } from "@/lib/uso";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
-import { mlGet, mlPost } from "@/marketplaces/mercadolivre/oauth";
+import { mlPost } from "@/marketplaces/mercadolivre/oauth";
+import type { Rascunho } from "@/domain/rascunho";
 
 export const maxDuration = 60;
 
+const DOMINIO = "MLB-CARS_AND_VANS";
+const MAX_FAMILIAS = 150;
+
+type Familia = { marca: string; modelo: string; ano: number };
+
+export const POST = (request: NextRequest) => usoStore.run([], () => tratar(request));
+
+const attrs = (f: Familia) => [
+  { id: "BRAND", value_name: f.marca },
+  { id: "MODEL", value_name: f.modelo },
+  { id: "VEHICLE_YEAR", value_name: String(f.ano) },
+];
+
 /**
- * Exploração (somente leitura/consulta): testa como a API do ML trata compatibilidade de veículos,
- * para sabermos o formato certo antes de construir o envio. Não altera nenhum anúncio.
+ * Compatibilidade de veículos do anúncio (domínio MLB-CARS_AND_VANS; atributos BRAND, MODEL e VEHICLE_YEAR).
+ *  "previa": transforma a lista CONFIRMADA em combinações marca/modelo/ano e confere cada uma no catálogo do ML.
+ *  "enviar": associa as combinações existentes ao anúncio.
  */
-export async function POST(request: NextRequest) {
-  const { itemId } = (await request.json().catch(() => ({}))) as { itemId?: string };
-  if (!itemId || !/^MLB\d+$/.test(itemId)) return NextResponse.json({ error: "ID de anúncio inválido" }, { status: 400 });
+async function tratar(request: NextRequest) {
+  const { acao, produtoId, itemId, familias } = (await request.json().catch(() => ({}))) as { acao?: "previa" | "enviar"; produtoId?: string; itemId?: string; familias?: Familia[] };
+  if (!produtoId || !acao) return NextResponse.json({ error: "dados insuficientes" }, { status: 400 });
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
   const token = await getAccessToken(supabase);
   if (!token) return NextResponse.json({ error: "conta do Mercado Livre não conectada" }, { status: 400 });
 
-  const cortar = (b: unknown, max = 2500) => {
-    const t = JSON.stringify(b);
-    return t.length > max ? `${t.slice(0, max)}…(cortado)` : b;
-  };
-  const testes: { nome: string; resultado: unknown }[] = [];
-  const dominio = "MLB-CARS_AND_VANS";
+  try {
+    if (acao === "previa") {
+      const { data: produto } = await supabase.from("produtos").select("rascunho").eq("id", produtoId).maybeSingle();
+      const r = produto?.rascunho as Rascunho | null;
+      const linhas = (r?.compatibilidade ?? []).filter((c) => c.origem === "confirmado").map((c) => `${c.veiculo}${c.anos ? ` ${c.anos}` : ""}`);
+      if (!linhas.length) return NextResponse.json({ error: "confirme ao menos um veículo na lista de compatibilidade do rascunho (e salve o rascunho)" }, { status: 400 });
+      const norm = await normalizarVeiculos(linhas);
+      await gravarUso(supabase, produtoId, "compatibilidade").catch(() => {});
+      if (!norm) return NextResponse.json({ error: "A IA não conseguiu interpretar a lista, tente de novo" }, { status: 502 });
 
-  // 1) atributos do domínio de veículos (só id, nome e relevância; sem as listas de valores)
-  const dom = await mlGet(`/catalog_domains/${dominio}`, token);
-  const attrs = ((dom.body as { attributes?: { id: string; name: string; tags?: { hierarchy?: string; relevance?: number } }[] } | null)?.attributes ?? []).map((a) => ({ id: a.id, nome: a.name, hierarquia: a.tags?.hierarchy, relevancia: a.tags?.relevance }));
-  testes.push({ nome: `GET /catalog_domains/${dominio} (atributos)`, resultado: { status: dom.status, atributos: attrs } });
-
-  // 2) qual atributo guarda o modelo? testa contagens com marca + cada candidato
-  const candidatos = attrs.filter((a) => a.id !== "BRAND" && /MODEL|VERSION|TRIM|YEAR|SUBMODEL|VEHICLE/i.test(`${a.id} ${a.nome}`)).slice(0, 6);
-  for (const c of candidatos) {
-    for (const valor of ["Fusca", "Gol"]) {
-      const r = await mlPost("/catalog_compatibilities/products_search/count_family_products", token, { domain_id: dominio, attributes: [{ id: "BRAND", value_name: "Volkswagen" }, { id: c.id, value_name: valor }] });
-      testes.push({ nome: `count ${dominio}: Volkswagen + ${c.id}=${valor}`, resultado: { status: r.status, body: cortar(r.body, 400) } });
+      // combinações marca/modelo/ano (sem repetir); linhas sem ano ficam de fora e são avisadas
+      const sem: string[] = [];
+      const todas = new Map<string, Familia>();
+      for (const n of norm) {
+        if (!n.marca || !n.modelo) continue;
+        if (n.ano_ini == null || n.ano_fim == null) {
+          sem.push(`${n.marca} ${n.modelo}`);
+          continue;
+        }
+        for (let a = Math.min(n.ano_ini, n.ano_fim); a <= Math.max(n.ano_ini, n.ano_fim) && a - Math.min(n.ano_ini, n.ano_fim) < 60; a++) {
+          todas.set(`${n.marca}|${n.modelo}|${a}`, { marca: n.marca, modelo: n.modelo, ano: a });
+        }
+      }
+      const lista = [...todas.values()].slice(0, MAX_FAMILIAS);
+      // confere no catálogo (em lotes, para respeitar o tempo)
+      const existentes: Familia[] = [];
+      const ausentes: Familia[] = [];
+      for (let i = 0; i < lista.length; i += 10) {
+        const lote = lista.slice(i, i + 10);
+        const res = await Promise.all(lote.map((f) => mlPost("/catalog_compatibilities/products_search/count_family_products", token, { domain_id: DOMINIO, attributes: attrs(f) })));
+        res.forEach((x, j) => ((x.body as { count?: number } | null)?.count ?? 0) > 0 ? existentes.push(lote[j]) : ausentes.push(lote[j]));
+      }
+      return NextResponse.json({ existentes, ausentes, semAno: sem, truncado: todas.size > MAX_FAMILIAS });
     }
+
+    // enviar
+    if (!itemId || !/^MLB\d+$/.test(itemId) || !familias?.length) return NextResponse.json({ error: "anúncio e combinações obrigatórios" }, { status: 400 });
+    const { data: anuncio } = await supabase.from("anuncios").select("id").eq("produto_id", produtoId).eq("external_id", itemId).maybeSingle();
+    if (!anuncio) return NextResponse.json({ error: "anúncio não encontrado neste produto" }, { status: 404 });
+    const corpo = { products_families: familias.slice(0, MAX_FAMILIAS).map((f) => ({ domain_id: DOMINIO, attributes: attrs(f) })) };
+    const resp = await mlPost(`/items/${itemId}/compatibilities`, token, corpo);
+    return NextResponse.json({ ok: resp.ok, status: resp.status, resposta: resp.body, enviadas: corpo.products_families.length });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "falha" }, { status: 500 });
   }
-
-  // 3) busca de produtos (veículos) do domínio, para ver o formato do que se associa ao anúncio
-  const prod = await mlGet(`/products/search?status=active&site_id=MLB&domain_id=${dominio}&q=${encodeURIComponent("Volkswagen Fusca 1600")}&limit=3`, token);
-  testes.push({ nome: "GET /products/search (veículos) Volkswagen Fusca 1600", resultado: { status: prod.status, body: cortar(prod.body, 3500) } });
-
-  // 4) estado atual das compatibilidades do anúncio
-  testes.push({ nome: `GET /items/${itemId}/compatibilities`, resultado: { status: (await mlGet(`/items/${itemId}/compatibilities`, token)).status } });
-  return NextResponse.json({ testes });
 }

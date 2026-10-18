@@ -497,3 +497,29 @@ export async function preencherFicha(fatos: string, campos: unknown[], budget = 
   }
   return { model: null, itens: null };
 }
+
+/** Converte descrições de veículos em marca, modelo e faixa de anos, com os nomes usados no catálogo de veículos do ML. */
+export async function normalizarVeiculos(linhas: string[], budget = BUDGET_MS) {
+  const prompt = `Converta cada linha de compatibilidade de veículo em marca, modelo e faixa de anos, usando os nomes do catálogo brasileiro de veículos (marca como "Volkswagen", "Chevrolet", "Fiat"; modelo só o nome, como "Fusca", "Gol", "Brasília", "Kombi", "Variant", "Saveiro", "Karmann Ghia", "TL", "Uno").
+Regras: ignore cilindrada/motorização e texto entre parênteses; "VW" é "Volkswagen"; se a linha tiver faixa de anos, use ano_ini e ano_fim; se tiver um ano só, os dois iguais; se não houver ano, use null. Uma linha pode virar uma única entrada.
+Responda apenas com um bloco \`\`\`json: [{ "linha": number, "marca": string, "modelo": string, "ano_ini": number|null, "ano_fim": number|null }].
+
+LINHAS:
+${linhas.map((l, i) => `${i}: ${l}`).join("\n")}`;
+  const t0 = Date.now();
+  for (const m of ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]) {
+    if (restante(t0, budget) < 8000) break;
+    const b = await callGemini(m, [{ text: prompt }], false, 4096, Math.min(restante(t0, budget), 30000));
+    if (!b.res.ok) continue;
+    const texto = readGrounding(b.body, false).text;
+    const ini = texto.indexOf("[");
+    const fim = texto.lastIndexOf("]");
+    if (ini < 0 || fim < ini) continue;
+    try {
+      return JSON.parse(texto.slice(ini, fim + 1)) as { linha: number; marca: string; modelo: string; ano_ini: number | null; ano_fim: number | null }[];
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}

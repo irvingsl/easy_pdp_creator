@@ -31,7 +31,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
 
   const { data: anuncios } = await supabase
     .from("anuncios")
-    .select("id, external_id, status, preco, criado_em, permalink:resposta_criacao->>permalink")
+    .select("id, external_id, status, preco, criado_em, permalink:resposta_criacao->>permalink, tags_frete:resposta_criacao->shipping->tags")
     .eq("produto_id", id)
     .neq("status", "deleted")
     .order("criado_em", { ascending: false });
@@ -140,12 +140,15 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
                 <span className="text-xs text-gray-500">{new Date(a.criado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                 {a.permalink && <a className="text-indigo-600 underline" href={String(a.permalink)} target="_blank" rel="noreferrer">Abrir no ML</a>}
                 {a.external_id && <AnuncioQualidade itemId={a.external_id} />}
-                {a.external_id && <AnuncioCompat itemId={a.external_id} />}
+                {a.external_id && <AnuncioCompat produtoId={produto.id} itemId={a.external_id} />}
                 {a.external_id && <AnuncioAtualizar produtoId={produto.id} itemId={a.external_id} />}
               </li>
             ))}
           </ul>
-          <AnuncioSegundaOpcao produtoId={produto.id} precoBase={rascunho?.preco ?? null} />
+          {/* se o ML já impôs frete grátis, não existe a versão "sem frete grátis": a segunda opção não faz sentido */}
+          {!anuncios.some((a) => Array.isArray(a.tags_frete) && a.tags_frete.includes("mandatory_free_shipping")) && (
+            <AnuncioSegundaOpcao produtoId={produto.id} precoBase={rascunho?.preco ?? null} />
+          )}
         </Etapa>
       )}
 
