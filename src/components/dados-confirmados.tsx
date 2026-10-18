@@ -54,8 +54,7 @@ export function DadosConfirmadosForm({
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-      <h2 className="font-medium">Dados confirmados por você</h2>
+    <div className="flex flex-col gap-3">
       <p className="text-xs text-gray-500">
         O que você conferiu com o item na mão. Vale mais que a IA e que a web, e vai como fato nas próximas identificações.
       </p>
@@ -87,6 +86,6 @@ export function DadosConfirmadosForm({
         <button onClick={salvar} disabled={busy} className={btnPrimary}>{busy ? "Salvando..." : "Salvar dados confirmados"}</button>
         {msg && <span className="text-sm text-gray-600 dark:text-gray-400">{msg}</span>}
       </div>
-    </section>
+    </div>
   );
 }

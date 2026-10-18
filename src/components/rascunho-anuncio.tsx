@@ -152,8 +152,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
   const set = <K extends keyof Rascunho>(k: K, v: Rascunho[K]) => setR((p) => (p ? { ...p, [k]: v } : p));
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-      <h2 className="font-medium">Rascunho do anúncio</h2>
+    <div className="flex flex-col gap-3">
       <p className="text-xs text-gray-500">
         Texto original gerado só com os fatos do produto. Revise tudo: nada é publicado daqui.
       </p>
@@ -369,6 +368,6 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
           <button type="button" onClick={salvar} disabled={busy} className={btnPrimary}>Salvar rascunho</button>
         </>
       )}
-    </section>
+    </div>
   );
 }

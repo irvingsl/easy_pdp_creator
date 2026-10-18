@@ -126,9 +126,8 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
 
   const a = res?.analysis;
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-medium">Identificação com IA</h2>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button onClick={identificar} disabled={busy} className={btnPrimary}>
           {busy ? fase || "Analisando..." : res ? "Identificar de novo" : "Identificar com IA"}
         </button>
@@ -137,7 +136,7 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
         <input type="checkbox" checked={cego} onChange={(e) => setCego(e.target.checked)} />
         Teste às cegas: ignorar os dados confirmados nesta identificação
       </label>
-      <p className="text-xs text-gray-500">As fotos originais (até 4) são enviadas ao Google (Gemini), que também pesquisa na web. No plano gratuito cada identificação usa 1 das 20 consultas diárias (5 por minuto).</p>
+      <p className="text-xs text-gray-500">As fotos originais (até 4) são enviadas ao Google (Gemini), que também pesquisa na web.</p>
       {error && <p className="break-words text-sm text-red-600">{error}</p>}
 
       {res && a && !("tipo_item" in a) && (
@@ -382,6 +381,6 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
           </details>
         </div>
       )}
-    </section>
+    </div>
   );
 }
