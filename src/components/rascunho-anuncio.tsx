@@ -378,7 +378,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
               const linhas: [string, string, boolean?][] = [
                 ["Preço de venda", reais(preco)],
                 [`Comissão do ML${calc.detalhes?.percentage_fee != null ? ` (${calc.detalhes.percentage_fee}%${calc.detalhes.fixed_fee ? ` + ${reais(calc.detalhes.fixed_fee)} fixos` : ""})` : ""}`, com == null ? "não obtida" : `− ${reais(com)}`],
-                ...(!obrigatorio ? ([["Sobra se o comprador pagar o frete", liquido(0), !gratis]] as [string, string, boolean?][]) : []),
+                ...(!obrigatorio ? ([["Sobra sem frete por sua conta", liquido(0), !gratis]] as [string, string, boolean?][]) : []),
                 ...(calc.freteTabela != null && calc.descontoFrete
                   ? ([["Frete de tabela (sem desconto)", reais(calc.freteTabela)]] as [string, string, boolean?][])
                   : []),
@@ -409,10 +409,13 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
                   {obrigatorio ? (
                     <p className="text-xs text-gray-500">Neste preço o ML exige frete grátis: o frete é por sua conta.</p>
                   ) : (
+                    <>
+                    <p className="text-xs text-gray-500">Sem a opção abaixo, o frete não é por sua conta. Mesmo assim o comprador pode ver &quot;frete grátis&quot; se o próprio ML cobrir o envio nessa faixa de preço (você paga só a tarifa fixa da venda).</p>
                     <label className="flex items-center gap-2">
                       <input type="checkbox" checked={r?.frete_gratis === true} onChange={(e) => set("frete_gratis", e.target.checked)} />
                       Oferecer frete grátis (por minha conta)
                     </label>
+                    </>
                   )}
                   {calc.freteObrigatorio == null && <p className="text-xs text-gray-500">Não consegui saber se o ML exige frete grátis neste preço; o ML decide ao publicar.</p>}
                   {pago == null && <p className="text-xs text-gray-500">O ML não informou o frete desta conta. Digite o valor que o ML mostra para você:</p>}
