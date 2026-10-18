@@ -21,6 +21,12 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
     .maybeSingle();
   if (!produto) notFound();
 
+  const { data: anuncios } = await supabase
+    .from("anuncios")
+    .select("id, external_id, status, preco, criado_em, permalink:resposta_criacao->>permalink")
+    .eq("produto_id", id)
+    .order("criado_em", { ascending: false });
+
   const fotos = [...produto.produto_fotos].sort((a, b) => a.ordem - b.ordem);
   const { data: signed } = await supabase.storage
     .from(BUCKET_ORIGINAIS)
@@ -40,6 +46,23 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
       <DadosConfirmadosForm produtoId={produto.id} oemCode={produto.oem_code} inicial={(produto.dados_confirmados as DadosConfirmados) ?? {}} />
 
       <IdentificarIA produtoId={produto.id} inicial={(produto.identificacao as Identificacao | null) ?? null} />
+
+      {!!anuncios?.length && (
+        <section className="flex flex-col gap-2 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+          <h2 className="font-medium">Anúncios publicados</h2>
+          <ul className="flex flex-col gap-2 text-sm">
+            {anuncios.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-mono">{a.external_id}</span>
+                <span className="text-gray-500">{a.status === "paused" ? "pausado" : a.status}</span>
+                <span>{a.preco != null ? Number(a.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : ""}</span>
+                <span className="text-xs text-gray-500">{new Date(a.criado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
+                {a.permalink && <a className="text-indigo-600 underline" href={String(a.permalink)} target="_blank" rel="noreferrer">Abrir no ML</a>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <RascunhoAnuncio produtoId={produto.id} inicial={(produto.rascunho as Rascunho | null) ?? null} />
 
