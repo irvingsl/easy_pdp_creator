@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
-import { addPhoto, deletePhoto, keepOriginal, makeMain, reprocessPhoto } from "@/lib/photos";
+import { deletePhoto, keepOriginal, makeMain, processPending, reprocessPhoto, saveOriginal } from "@/lib/photos";
 import { btnSecondary } from "./ui";
 
 export type FotoView = {
@@ -35,6 +35,36 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
     return () => window.removeEventListener("keydown", onKey);
   }, [zoom]);
 
+  // Remove o fundo das fotos pendentes, uma de cada vez, assim que a página abre (ou quando entram fotos novas).
+  // Se o vendedor sair antes de terminar, o resto continua na próxima visita.
+  const processando = useRef(false);
+  const pendentesKey = fotos.filter((f) => f.status === "pendente").map((f) => f.id).join(",");
+  useEffect(() => {
+    if (!pendentesKey || processando.current) return;
+    processando.current = true;
+    const ids = pendentesKey.split(",");
+    (async () => {
+      const supabase = createClient();
+      const erros: string[] = [];
+      try {
+        for (const [i, id] of ids.entries()) {
+          const f = fotos.find((x) => x.id === id);
+          if (!f) continue;
+          setBusy(`Removendo o fundo da foto ${i + 1} de ${ids.length}...`);
+          const r = await processPending(supabase, { userId, produtoId, fotoId: f.id, pathOriginal: f.pathOriginal, step: (s: string) => setBusy(`Foto ${i + 1} de ${ids.length}: ${s}...`) });
+          if (r.erro) erros.push(`foto ${i + 1}: ${r.erro}`);
+          router.refresh();
+        }
+      } finally {
+        processando.current = false;
+        setBusy(null);
+        if (erros.length) setError(`Não consegui remover o fundo de ${erros.length} foto(s) (${erros.join("; ")}). Use "Refazer fundo".`);
+        router.refresh();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendentesKey]);
+
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label);
     setError("");
@@ -63,13 +93,9 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
           skipped.push(e instanceof Error ? e.message : file.name);
           continue;
         }
-        await addPhoto(supabase, {
-          userId,
-          produtoId,
-          small,
-          ordem: ordem++,
-          step: (s) => setBusy(`Foto ${i + 1} de ${files.length}: ${s}...`),
-        });
+        // só salva o original: a remoção do fundo roda sozinha logo depois (efeito abaixo)
+        setBusy(`Foto ${i + 1} de ${files.length}: enviando...`);
+        await saveOriginal(supabase, { userId, produtoId, small, ordem: ordem++ });
       }
       if (skipped.length) throw new Error(`Não consegui abrir: ${skipped.join("; ")}`);
     });

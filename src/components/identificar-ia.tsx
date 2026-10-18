@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { PartAnalysis } from "@/lib/gemini";
 import type { CatalogHit } from "@/marketplaces/mercadolivre/catalog";
@@ -49,7 +49,7 @@ const ORIGEM: Record<string, string> = {
 
 const money = (n: number | null) => (n == null ? "?" : `R$ ${n.toLocaleString("pt-BR")}`);
 
-export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inicial: Identificacao | null }) {
+export function IdentificarIA({ produtoId, inicial, autoStart = false }: { produtoId: string; inicial: Identificacao | null; autoStart?: boolean }) {
   const router = useRouter();
   const [res, setRes] = useState<Identificacao | null>(inicial);
   const [busy, setBusy] = useState(false);
@@ -123,6 +123,16 @@ export function IdentificarIA({ produtoId, inicial }: { produtoId: string; inici
     await createClient().from("produtos").update({ oem_code: code }).eq("id", produtoId);
     router.refresh();
   }
+
+  // Logo após criar o produto, a identificação começa sozinha (usa as fotos originais, enquanto o fundo é removido no navegador)
+  const iniciou = useRef(false);
+  useEffect(() => {
+    if (autoStart && !inicial && !iniciou.current) {
+      iniciou.current = true;
+      identificar();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const a = res?.analysis;
   return (

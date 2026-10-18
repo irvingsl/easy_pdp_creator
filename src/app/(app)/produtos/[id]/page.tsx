@@ -20,6 +20,9 @@ import type { DadosConfirmados } from "@/domain/dados-confirmados";
 
 export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
   const { id } = await props.params;
+  const sp = await props.searchParams;
+  const auto = sp.auto === "1";
+  const aviso = typeof sp.aviso === "string" ? sp.aviso : "";
   const supabase = await createClient();
 
   const { data: produto } = await supabase
@@ -95,6 +98,8 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
         <div className="mt-2"><EstoqueProduto key={produto.estoque} produtoId={produto.id} estoque={produto.estoque} /></div>
       </div>
 
+      {aviso && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">{aviso}</p>}
+
       <Etapa titulo="Fotos" resumo={`${fotos.length} foto(s)`} aberto>
         <ProdutoFotos
           produtoId={produto.id}
@@ -118,8 +123,8 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
         <DadosConfirmadosForm produtoId={produto.id} oemCode={produto.oem_code} inicial={(produto.dados_confirmados as DadosConfirmados) ?? {}} />
       </Etapa>
 
-      <Etapa n={2} titulo="Identificação com IA" resumo={produto.identificacao ? "feita" : "pendente"} aberto={proxima === "identificacao"}>
-        <IdentificarIA produtoId={produto.id} inicial={(produto.identificacao as Identificacao | null) ?? null} />
+      <Etapa n={2} titulo="Identificação com IA" resumo={produto.identificacao ? "feita" : "pendente"} aberto={proxima === "identificacao" || (auto && !produto.identificacao)}>
+        <IdentificarIA produtoId={produto.id} inicial={(produto.identificacao as Identificacao | null) ?? null} autoStart={auto} />
       </Etapa>
 
       <Etapa n={3} titulo="Rascunho do anúncio" resumo={rascunho?.titulo || "pendente"} aberto={proxima === "rascunho"}>

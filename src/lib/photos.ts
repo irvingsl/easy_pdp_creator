@@ -12,37 +12,35 @@ async function makeWhite(small: Blob, step?: Step): Promise<Blob> {
   return composeOnWhite(cutout);
 }
 
-/** Envia o original, cria o registro e gera a versão com fundo branco. */
-export async function addPhoto(
-  supabase: SupabaseClient,
-  p: { userId: string; produtoId: string; small: Blob; ordem: number; step?: Step },
-) {
+/** Envia o original e cria o registro (status "pendente"). A remoção do fundo é feita à parte, por processPending. */
+export async function saveOriginal(supabase: SupabaseClient, p: { userId: string; produtoId: string; small: Blob; ordem: number }) {
   const base = `${p.userId}/${p.produtoId}/${crypto.randomUUID()}`;
   const pathOriginal = `${base}.jpg`;
   const up = await supabase.storage.from(BUCKET_ORIGINAIS).upload(pathOriginal, p.small, { contentType: "image/jpeg" });
   if (up.error) throw up.error;
-
-  const { data: foto, error } = await supabase
-    .from("produto_fotos")
-    .insert({ produto_id: p.produtoId, path_original: pathOriginal, ordem: p.ordem })
-    .select("id")
-    .single();
+  const { error } = await supabase.from("produto_fotos").insert({ produto_id: p.produtoId, path_original: pathOriginal, ordem: p.ordem });
   if (error) throw error;
+  return { pathOriginal };
+}
 
+/** Gera a versão com fundo branco de uma foto já salva (status "pendente"). Devolve o erro, se houver. */
+export async function processPending(
+  supabase: SupabaseClient,
+  p: { userId: string; produtoId: string; fotoId: string; pathOriginal: string; step?: Step },
+) {
   try {
-    const white = await makeWhite(p.small, p.step);
-    const pathProcessada = `${base}.jpg`;
-    const up2 = await supabase.storage.from(BUCKET_PROCESSADAS).upload(pathProcessada, white, { contentType: "image/jpeg" });
-    if (up2.error) throw up2.error;
-    await supabase
-      .from("produto_fotos")
-      .update({ path_processada: pathProcessada, status_processamento: "ok" })
-      .eq("id", foto.id);
+    const { data: original, error } = await supabase.storage.from(BUCKET_ORIGINAIS).download(p.pathOriginal);
+    if (error) throw error;
+    const white = await makeWhite(original, p.step);
+    const pathProcessada = `${p.userId}/${p.produtoId}/${crypto.randomUUID()}.jpg`;
+    const up = await supabase.storage.from(BUCKET_PROCESSADAS).upload(pathProcessada, white, { contentType: "image/jpeg" });
+    if (up.error) throw up.error;
+    await supabase.from("produto_fotos").update({ path_processada: pathProcessada, status_processamento: "ok" }).eq("id", p.fotoId);
+    return {};
   } catch (e) {
-    await supabase.from("produto_fotos").update({ status_processamento: "erro" }).eq("id", foto.id);
+    await supabase.from("produto_fotos").update({ status_processamento: "erro" }).eq("id", p.fotoId);
     return { erro: e instanceof Error ? e.message : String(e) };
   }
-  return {};
 }
 
 /** Refaz o fundo branco a partir do original já salvo. */

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
-import { addPhoto } from "@/lib/photos";
+import { saveOriginal } from "@/lib/photos";
+import { aquecerModelo } from "@/lib/images/remove-background";
 import { btnPrimary, btnSecondary, inputBase } from "./ui";
 
 type Progress = { done: number; total: number; step: string };
@@ -17,7 +18,11 @@ export function NovoProdutoForm() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [produtoLink, setProdutoLink] = useState<string | null>(null);
+
+  // começa a baixar/iniciar o modelo de remoção de fundo enquanto o vendedor escolhe as fotos
+  useEffect(() => {
+    aquecerModelo();
+  }, []);
 
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
@@ -58,33 +63,19 @@ export function NovoProdutoForm() {
       if (pErr) throw pErr;
 
       produtoCriado = produto.id;
-      const falhasFundo: string[] = [];
-      for (const [i, small] of smalls.entries()) {
-        const r = await addPhoto(supabase, {
-          userId,
-          produtoId: produto.id,
-          small,
-          ordem: i,
-          step: (label) => setProgress({ done: i, total: smalls.length, step: label }),
-        });
-        if (r.erro) falhasFundo.push(`foto ${i + 1}: ${r.erro}`);
-      }
-      if (falhasFundo.length) {
-        setProgress(null);
-        setFiles([]);
-        setNotice(
-          `Produto salvo, mas o fundo não foi removido em ${falhasFundo.length} foto(s) (${falhasFundo.join("; ")}). Abra o produto e use "Refazer fundo".`,
-        );
-        setProdutoLink(produto.id);
-        return;
-      }
-      if (skipped.length) {
-        setProgress(null);
-        setFiles([]);
-        setNotice(`Produto salvo. Não consegui abrir: ${skipped.join("; ")}.`);
-        return;
-      }
-      router.push("/produtos");
+      // Só salva os originais (rápido e em paralelo). O fundo é removido na página do produto, onde a identificação
+      // por IA, que usa as fotos originais, já pode rodar ao mesmo tempo.
+      setProgress({ done: 0, total: smalls.length, step: "Enviando fotos" });
+      let enviadas = 0;
+      await Promise.all(
+        smalls.map(async (small, i) => {
+          await saveOriginal(supabase, { userId, produtoId: produto.id, small, ordem: i });
+          enviadas += 1;
+          setProgress({ done: enviadas, total: smalls.length, step: "Enviando fotos" });
+        }),
+      );
+      const aviso = skipped.length ? `&aviso=${encodeURIComponent(`Não consegui abrir: ${skipped.join("; ")}`)}` : "";
+      router.push(`/produtos/${produto.id}?auto=1${aviso}`);
       router.refresh();
     } catch (err) {
       // Não deixa um produto vazio para trás se nenhuma foto chegou a ser salva
@@ -168,7 +159,7 @@ export function NovoProdutoForm() {
       </button>
       {notice && (
         <p className="text-sm text-amber-700">
-          {notice} <Link href={produtoLink ? `/produtos/${produtoLink}` : "/produtos"} className="underline">{produtoLink ? "Abrir o produto" : "Ver produtos"}</Link>
+          {notice} <Link href="/produtos" className="underline">Ver produtos</Link>
         </p>
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}
