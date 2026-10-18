@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessToken, getAccount } from "@/marketplaces/mercadolivre/accounts";
-import { mlGet } from "@/marketplaces/mercadolivre/oauth";
+import { mlGet, mlPost } from "@/marketplaces/mercadolivre/oauth";
+import { prepararAnuncio } from "@/marketplaces/mercadolivre/preparar";
 import type { Rascunho } from "@/domain/rascunho";
 
 export const maxDuration = 30;
@@ -62,7 +63,23 @@ export async function POST(request: NextRequest) {
   };
   if (envio?.body) varrer(envio.body, "");
 
+  // O frete grátis é obrigatório neste preço? O ML avisa na validação (sem frete grátis pedido) com item.shipping.mandatory_free_shipping
+  let freteObrigatorio: boolean | null = null;
+  try {
+    const p = await prepararAnuncio(supabase, token, produtoId);
+    if (!("erro" in p) && !("categorias" in p)) {
+      const v = await mlPost("/items/validate", token, { ...p.payload, shipping: { ...p.payload.shipping, free_shipping: false } });
+      if (v.status < 500) {
+        const causas = ((v.body as { cause?: { code?: string }[] } | null)?.cause ?? []);
+        freteObrigatorio = causas.some((c) => c.code === "item.shipping.mandatory_free_shipping");
+      }
+    }
+  } catch {
+    /* sem a informação: a tela trata como desconhecido */
+  }
+
   return NextResponse.json({
+    freteObrigatorio,
     reputacao: reputacao ? { nivel: reputacao.level_id ?? null, status: reputacao.power_seller_status ?? null } : null,
     candidatosFrete,
     preco: r.preco,

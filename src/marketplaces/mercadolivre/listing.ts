@@ -83,7 +83,7 @@ export function montarAnuncio(opts: {
     listing_type_id: "gold_special",
     pictures: opts.fotos.map((source) => ({ source })),
     attributes: attrs,
-    shipping: { mode: "me2", local_pick_up: false, free_shipping: false },
+    shipping: { mode: "me2", local_pick_up: false, free_shipping: r.frete_gratis === true },
   };
 }
 

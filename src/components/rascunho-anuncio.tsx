@@ -75,7 +75,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
     }
   }
 
-  type Calc = { preco?: number; comissao?: number | null; detalhes?: { percentage_fee?: number; fixed_fee?: number } | null; freteTabela?: number | null; fretePago?: number | null; descontoFrete?: { taxa: number; tipo: string | null } | null; reputacao?: { nivel: string | null; status: string | null } | null; candidatosFrete?: { campo: string; valor: number }[]; brutos?: unknown; error?: string };
+  type Calc = { preco?: number; comissao?: number | null; detalhes?: { percentage_fee?: number; fixed_fee?: number } | null; freteTabela?: number | null; freteObrigatorio?: boolean | null; fretePago?: number | null; descontoFrete?: { taxa: number; tipo: string | null } | null; reputacao?: { nivel: string | null; status: string | null } | null; candidatosFrete?: { campo: string; valor: number }[]; brutos?: unknown; error?: string };
   const [calc, setCalc] = useState<Calc | null>(null);
   const [freteReal, setFreteReal] = useState("");
   async function calcular() {
@@ -372,20 +372,20 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
               const pago = Number.isFinite(informado) ? informado : calc.fretePago ?? null;
               const liquido = (frete: number | null | undefined) => (com == null || frete == null ? "?" : reais(preco - com - frete));
               const pct = calc.descontoFrete ? Math.round(calc.descontoFrete.taxa * 100) : 0;
+              const obrigatorio = calc.freteObrigatorio === true;
+              // com frete grátis o vendedor paga o frete; sem ele, o comprador paga
+              const gratis = obrigatorio || r?.frete_gratis === true;
               const linhas: [string, string, boolean?][] = [
                 ["Preço de venda", reais(preco)],
                 [`Comissão do ML${calc.detalhes?.percentage_fee != null ? ` (${calc.detalhes.percentage_fee}%${calc.detalhes.fixed_fee ? ` + ${reais(calc.detalhes.fixed_fee)} fixos` : ""})` : ""}`, com == null ? "não obtida" : `− ${reais(com)}`],
-                ["Sobra sem contar o frete", liquido(0)],
+                ...(!obrigatorio ? ([["Sobra se o comprador pagar o frete", liquido(0), !gratis]] as [string, string, boolean?][]) : []),
                 ...(calc.freteTabela != null && calc.descontoFrete
-                  ? ([
-                      ["Frete de tabela (sem desconto)", `− ${reais(calc.freteTabela)}`],
-                      ["Sobra pagando o frete de tabela", liquido(calc.freteTabela)],
-                    ] as [string, string, boolean?][])
+                  ? ([["Frete de tabela (sem desconto)", reais(calc.freteTabela)]] as [string, string, boolean?][])
                   : []),
                 ...(pago != null
                   ? ([
-                      [Number.isFinite(informado) ? "Frete que você informou" : `Frete que você paga${pct ? ` (com ${pct}% de desconto do ML)` : ""}`, `− ${reais(pago)}`],
-                      ["Sobra com o seu frete", liquido(pago), true],
+                      [Number.isFinite(informado) ? "Frete que você informou" : `Frete que você pagaria${pct ? ` (com ${pct}% de desconto do ML)` : ""}`, `− ${reais(pago)}`],
+                      ["Sobra oferecendo frete grátis", liquido(pago), gratis],
                     ] as [string, string, boolean?][])
                   : []),
               ];
@@ -398,14 +398,23 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
                       ))}
                     </tbody>
                   </table>
-                  {com != null && pago != null && preco - com - pago < 0 && (
+                  {com != null && (gratis ? pago != null && preco - com - pago < 0 : preco - com < 0) && (
                     <p className="rounded-lg bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
-                      Com este preço você teria prejuízo de {reais(Math.abs(preco - com - pago))} por venda (antes do custo da peça). Aumente o preço antes de publicar.
+                      Com este preço você teria prejuízo de {reais(Math.abs(preco - com - (gratis ? pago ?? 0 : 0)))} por venda (antes do custo da peça). Aumente o preço antes de publicar.
                     </p>
                   )}
-                  {com != null && pago != null && preco - com - pago >= 0 && (
+                  {com != null && (gratis ? pago != null && preco - com - pago >= 0 : preco - com >= 0) && (
                     <p className="text-xs text-gray-500">Isso é antes do custo da peça e de impostos.</p>
                   )}
+                  {obrigatorio ? (
+                    <p className="text-xs text-gray-500">Neste preço o ML exige frete grátis: o frete é por sua conta.</p>
+                  ) : (
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={r?.frete_gratis === true} onChange={(e) => set("frete_gratis", e.target.checked)} />
+                      Oferecer frete grátis (por minha conta)
+                    </label>
+                  )}
+                  {calc.freteObrigatorio == null && <p className="text-xs text-gray-500">Não consegui saber se o ML exige frete grátis neste preço; o ML decide ao publicar.</p>}
                   {pago == null && <p className="text-xs text-gray-500">O ML não informou o frete desta conta. Digite o valor que o ML mostra para você:</p>}
                   <label className="flex flex-col gap-1 text-xs text-gray-500">
                     Frete diferente do calculado? Digite o que o ML mostra (R$)

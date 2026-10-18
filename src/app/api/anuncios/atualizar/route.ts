@@ -30,7 +30,13 @@ export async function POST(request: NextRequest) {
     if (!r.preco || r.preco <= 0) return NextResponse.json({ error: "informe o preço" }, { status: 400 });
 
     // campos que o ML deixa alterar; família, categoria e condição ficam como foram criados
-    const corpo = { price: r.preco, attributes: payload.attributes, ...("sale_terms" in payload ? { sale_terms: payload.sale_terms } : {}) };
+    const corpo = {
+      price: r.preco,
+      attributes: payload.attributes,
+      ...("sale_terms" in payload ? { sale_terms: payload.sale_terms } : {}),
+      // só mexe no frete se o vendedor escolheu; onde o ML exige frete grátis ele mantém
+      ...(r.frete_gratis !== undefined ? { shipping: { free_shipping: r.frete_gratis } } : {}),
+    };
     const item = await mlPost(`/items/${itemId}`, token, corpo, "PUT");
     const desc = await mlPost(`/items/${itemId}/description`, token, { plain_text: descricaoFinal(r) }, "PUT");
     if (item.ok) await supabase.from("anuncios").update({ preco: r.preco, ultimo_sync_em: new Date().toISOString() }).eq("id", anuncio.id);

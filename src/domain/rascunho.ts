@@ -22,6 +22,8 @@ export type Rascunho = {
   preco_faixa: { minimo: number; maximo: number } | null;
   avisos: string[];
   ficha?: CampoFicha[];
+  /** oferecer frete grátis por conta do vendedor (onde o ML não o exige); o ML impõe quando obrigatório */
+  frete_gratis?: boolean;
   /** escolhas do vendedor para o Mercado Livre */
   categoria_id?: string;
   condicao?: "new" | "used";
