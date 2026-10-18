@@ -156,6 +156,21 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
     }
   }
 
+  // Pendências calculadas do estado atual: somem quando o vendedor resolve (não vêm mais da IA)
+  const pendencias: string[] = [];
+  if (r) {
+    if (!r.titulo.trim()) pendencias.push("Escrever o título.");
+    if (!r.descricao.trim()) pendencias.push("Escrever a descrição.");
+    if (!r.preco) pendencias.push("Informar o preço.");
+    if (!r.categoria_id) pendencias.push("Escolher a categoria (Mercado Livre → Sugerir).");
+    const naoConf = r.compatibilidade.filter((c) => c.origem !== "confirmado").length;
+    if (naoConf) pendencias.push(`Confirmar ou remover ${naoConf} compatibilidade(s) sugerida(s) pela web.`);
+    if (!r.embalagem?.altura || !r.embalagem.largura || !r.embalagem.comprimento || !r.embalagem.peso) pendencias.push("Informar as medidas e o peso da embalagem.");
+    const obrig = (r.ficha ?? []).filter((f) => f.obrigatorio && !f.valor.trim());
+    if (obrig.length) pendencias.push(`Preencher na ficha técnica: ${obrig.map((f) => f.nome).join(", ")}.`);
+    if (!r.ficha) pendencias.push("Preencher a ficha técnica da categoria.");
+  }
+
   const set = <K extends keyof Rascunho>(k: K, v: Rascunho[K]) => setR((p) => (p ? { ...p, [k]: v } : p));
 
   return (
@@ -170,6 +185,14 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
 
       {r && (
         <>
+          {pendencias.length > 0 ? (
+            <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              <p className="mb-1 font-medium">Falta para publicar ({pendencias.length})</p>
+              <ul className="list-disc pl-5">{pendencias.map((p) => <li key={p}>{p}</li>)}</ul>
+            </div>
+          ) : (
+            <p className="rounded-lg bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200">✓ Nada pendente: valide e publique.</p>
+          )}
           <label className="flex flex-col gap-1 text-sm">
             <span>
               Título <span className={r.titulo.length > TITULO_MAX ? "text-red-600" : "text-gray-500"}>({r.titulo.length}/{TITULO_MAX})</span>
@@ -386,12 +409,6 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
               );
             })()}
           </div>
-
-          {r.avisos.length > 0 && (
-            <ul className="list-disc rounded-lg bg-amber-50 p-3 pl-7 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-              {r.avisos.map((a, i) => <li key={i}>{a}</li>)}
-            </ul>
-          )}
 
           <button type="button" onClick={salvar} disabled={busy} className={btnPrimary}>Salvar rascunho</button>
         </>
