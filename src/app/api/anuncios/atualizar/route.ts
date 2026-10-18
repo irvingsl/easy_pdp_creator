@@ -32,6 +32,8 @@ export async function POST(request: NextRequest) {
     // campos que o ML deixa alterar; família, categoria e condição ficam como foram criados
     const corpo = {
       price: r.preco,
+      // o estoque do produto manda; com 0 não mexe (o ML pausa sozinho ao zerar)
+      ...(p.estoque > 0 ? { available_quantity: p.estoque } : {}),
       attributes: payload.attributes,
       ...("sale_terms" in payload ? { sale_terms: payload.sale_terms } : {}),
       // só mexe no frete se o vendedor escolheu; onde o ML exige frete grátis ele mantém

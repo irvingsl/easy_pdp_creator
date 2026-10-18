@@ -39,6 +39,8 @@ export function montarAnuncio(opts: {
   categoria: string;
   atributosCategoria: AtributoCategoria[];
   fotos: string[];
+  /** estoque do produto; na validação, com estoque 0 usa 1 só para o ML poder conferir o resto */
+  quantidade: number;
 }) {
   const { rascunho: r, conf, categoria, atributosCategoria } = opts;
   const e = r.embalagem;
@@ -77,7 +79,7 @@ export function montarAnuncio(opts: {
     category_id: categoria,
     price: r.preco ?? 0,
     currency_id: "BRL",
-    available_quantity: 1,
+    available_quantity: Math.max(1, Math.floor(opts.quantidade || 0)),
     buying_mode: "buy_it_now",
     condition: r.condicao ?? "new",
     listing_type_id: "gold_special",

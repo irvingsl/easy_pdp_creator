@@ -15,7 +15,7 @@ const ORIGEM: Record<string, string> = {
   sugerido_web: "sugestão da web, confirme",
 };
 
-export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; inicial: Rascunho | null }) {
+export function RascunhoAnuncio({ produtoId, inicial, estoque }: { produtoId: string; inicial: Rascunho | null; estoque: number }) {
   const router = useRouter();
   const [r, setR] = useState<Rascunho | null>(inicial);
   const [busy, setBusy] = useState(false);
@@ -162,6 +162,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
     if (!r.titulo.trim()) pendencias.push("Escrever o título.");
     if (!r.descricao.trim()) pendencias.push("Escrever a descrição.");
     if (!r.preco) pendencias.push("Informar o preço.");
+    if (!(estoque > 0)) pendencias.push("Informar o estoque do produto (no topo da página).");
     if (!r.categoria_id) pendencias.push("Escolher a categoria (Mercado Livre → Sugerir).");
     const naoConf = r.compatibilidade.filter((c) => c.origem !== "confirmado").length;
     if (naoConf) pendencias.push(`Confirmar ou remover ${naoConf} compatibilidade(s) sugerida(s) pela web.`);

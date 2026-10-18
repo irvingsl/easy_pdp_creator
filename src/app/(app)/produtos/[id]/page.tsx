@@ -7,6 +7,7 @@ import { BUCKET_ORIGINAIS, BUCKET_PROCESSADAS } from "@/domain/types";
 import { DeleteProdutoButton } from "@/components/delete-produto-button";
 import { ProdutoFotos, type FotoView } from "@/components/produto-fotos";
 import { IdentificarIA, type Identificacao } from "@/components/identificar-ia";
+import { EstoqueProduto } from "@/components/estoque-produto";
 import { Etapa } from "@/components/etapa";
 import { AnuncioAtualizar } from "@/components/anuncio-atualizar";
 import { AnuncioQualidade } from "@/components/anuncio-qualidade";
@@ -75,8 +76,9 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
         <Link href="/produtos" className="text-sm text-gray-500 hover:underline">← Produtos</Link>
         <h1 className="mt-1 font-mono text-xl font-semibold">{produto.sku}</h1>
         <p className="text-sm text-gray-500">
-          {produto.oem_code ? `OEM: ${produto.oem_code} · ` : ""}Estoque: {produto.estoque}
+          {produto.oem_code ? `OEM: ${produto.oem_code}` : ""}
         </p>
+        <div className="mt-2"><EstoqueProduto key={produto.estoque} produtoId={produto.id} estoque={produto.estoque} /></div>
       </div>
 
       <Etapa titulo="Fotos" resumo={`${fotos.length} foto(s)`} aberto>
@@ -107,7 +109,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
       </Etapa>
 
       <Etapa n={3} titulo="Rascunho do anúncio" resumo={rascunho?.titulo || "pendente"} aberto={proxima === "rascunho"}>
-        <RascunhoAnuncio produtoId={produto.id} inicial={rascunho} />
+        <RascunhoAnuncio produtoId={produto.id} inicial={rascunho} estoque={produto.estoque} />
       </Etapa>
 
       {!!anuncios?.length && (

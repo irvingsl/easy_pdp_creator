@@ -8,7 +8,7 @@ import { atributosDaCategoria, montarAnuncio, sugerirCategorias } from "./listin
 export async function prepararAnuncio(supabase: SupabaseClient, token: string, produtoId: string, sugerir = false) {
   const { data: produto } = await supabase
     .from("produtos")
-    .select("id, oem_code, dados_confirmados, rascunho, produto_fotos(path_processada, ordem, manter_original, status_processamento)")
+    .select("id, oem_code, estoque, dados_confirmados, rascunho, produto_fotos(path_processada, ordem, manter_original, status_processamento)")
     .eq("id", produtoId)
     .maybeSingle();
   if (!produto) return { erro: "produto não encontrado", http: 404 } as const;
@@ -32,6 +32,7 @@ export async function prepararAnuncio(supabase: SupabaseClient, token: string, p
     categoria: r.categoria_id,
     atributosCategoria,
     fotos,
+    quantidade: produto.estoque,
   });
-  return { rascunho: r, payload, atributosCategoria, fotoPrincipalOk } as const;
+  return { rascunho: r, payload, atributosCategoria, fotoPrincipalOk, estoque: produto.estoque as number } as const;
 }
