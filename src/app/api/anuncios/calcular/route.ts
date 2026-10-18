@@ -29,14 +29,26 @@ export async function POST(request: NextRequest) {
 
   const e = r.embalagem;
   let envio: { status: number; body: unknown } | null = null;
+  // list_cost = o que o vendedor paga (já com o desconto do ML); a tabela cheia vem em discount.promoted_amount
+  let fretePago: number | null = null;
   let freteTabela: number | null = null;
+  let descontoFrete: { taxa: number; tipo: string | null } | null = null;
   if (e?.altura && e.largura && e.comprimento && e.peso) {
     const n = (v: string) => v.replace(",", ".").trim();
     const dim = `${n(e.altura)}x${n(e.largura)}x${n(e.comprimento)},${n(e.peso)}`;
     const q = new URLSearchParams({ dimensions: dim, item_price: String(r.preco), listing_type_id: tipo, mode: "me2", condition: r.condicao ?? "new", verbose: "true" });
     envio = await mlGet(`/users/${conta.external_user_id}/shipping_options/free?${q}`, token);
-    const cov = (envio.body as { coverage?: { all_country?: { list_cost?: number } } } | null)?.coverage?.all_country;
-    if (typeof cov?.list_cost === "number") freteTabela = cov.list_cost;
+    const cov = (envio.body as { coverage?: { all_country?: { list_cost?: number; discount?: { rate?: number; type?: string; promoted_amount?: number } } } } | null)?.coverage?.all_country;
+    if (typeof cov?.list_cost === "number") {
+      fretePago = cov.list_cost;
+      const d = cov.discount;
+      if (d && typeof d.rate === "number" && d.rate > 0 && d.rate < 1) {
+        descontoFrete = { taxa: d.rate, tipo: d.type ?? null };
+        freteTabela = typeof d.promoted_amount === "number" ? d.promoted_amount : Math.round((cov.list_cost / (1 - d.rate)) * 100) / 100;
+      } else {
+        freteTabela = cov.list_cost;
+      }
+    }
   }
 
   // Reputação do vendedor (define o desconto de frete) e campos numéricos de custo/desconto que o ML devolver no envio
@@ -57,6 +69,8 @@ export async function POST(request: NextRequest) {
     comissao: fee?.sale_fee_amount ?? null,
     detalhes: fee?.sale_fee_details ?? null,
     freteTabela,
+    fretePago,
+    descontoFrete,
     brutos: { taxas: { status: taxas.status, body: taxas.body }, envio },
   });
 }
