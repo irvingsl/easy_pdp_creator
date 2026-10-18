@@ -407,6 +407,16 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque }: { produtoId: st
                   {com != null && (gratis ? pago != null && preco - com - pago >= 0 : preco - com >= 0) && (
                     <p className="text-xs text-gray-500">Isso é antes do custo da peça e de impostos.</p>
                   )}
+                  {!obrigatorio && com != null && pago != null && calc.detalhes?.percentage_fee != null && (() => {
+                    // mesma sobra do cenário sem frete: P·(1 − %) − fixa − frete = preço − comissão  →  P = (sobra + fixa + frete) / (1 − %)
+                    const taxa = calc.detalhes.percentage_fee / 100;
+                    const equivalente = (preco - com + (calc.detalhes.fixed_fee ?? 0) + pago) / (1 - taxa);
+                    return (
+                      <p className="rounded-lg bg-gray-50 p-3 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-400">
+                        Para ter a mesma sobra de {reais(preco - com)} oferecendo frete grátis, o preço seria cerca de <strong>{reais(Math.ceil(equivalente * 100) / 100)}</strong> (estimativa: comissão e frete mudam um pouco com o preço).
+                      </p>
+                    );
+                  })()}
                   {obrigatorio ? (
                     <p className="text-xs text-gray-500">Neste preço o ML exige frete grátis: o frete é por sua conta.</p>
                   ) : (

@@ -31,6 +31,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
     .from("anuncios")
     .select("id, external_id, status, preco, criado_em, permalink:resposta_criacao->>permalink")
     .eq("produto_id", id)
+    .neq("status", "deleted")
     .order("criado_em", { ascending: false });
 
   // O status gravado é o do momento da criação (o ML cria pausado enquanto baixa as fotos): busca o real no ML
@@ -42,8 +43,19 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
       if (token && ids.length) {
         const r = await mlGet(`/items?ids=${ids.join(",")}&attributes=id,status,sub_status`, token);
         const lista = (Array.isArray(r.body) ? r.body : []) as { code?: number; body?: { id?: string; status?: string; sub_status?: string[] } }[];
-        for (const it of lista) {
+        for (const [i, it] of lista.entries()) {
           const b = it.body;
+          // anúncio excluído no ML: some da lista (404, ou encerrado com sub_status "deleted")
+          const removido = it.code === 404 || (it.code === 200 && b?.status === "closed" && b.sub_status?.includes("deleted"));
+          if (removido) {
+            // a resposta de um item inexistente não traz o ID: o multiget mantém a ordem dos IDs pedidos
+            const a = anuncios.find((x) => x.external_id === ids[i]);
+            if (a) {
+              await supabase.from("anuncios").update({ status: "deleted", ultimo_sync_em: new Date().toISOString() }).eq("id", a.id);
+              anuncios.splice(anuncios.indexOf(a), 1);
+            }
+            continue;
+          }
           if (it.code !== 200 || !b?.id || !b.status) continue;
           subStatus.set(b.id, b.sub_status ?? []);
           const a = anuncios.find((x) => x.external_id === b.id);
