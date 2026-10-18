@@ -34,7 +34,10 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
         setMsg(res.status === 504 ? "A geração demorou demais, tente de novo." : `Resposta inesperada do servidor (${res.status}).`);
         return;
       }
-      if (j.rascunho) setR(j.rascunho);
+      if (j.rascunho) {
+        setR(j.rascunho);
+        setPrecoTxt(j.rascunho.preco != null ? String(j.rascunho.preco).replace(".", ",") : "");
+      }
       else setMsg(j.error ?? "Falha ao gerar o rascunho");
     } finally {
       setBusy(false);
@@ -96,6 +99,14 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
   }
 
   const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  // texto digitado no preço (aceita vírgula ou ponto e deixa digitar "12," sem apagar o separador)
+  const [precoTxt, setPrecoTxt] = useState(inicial?.preco != null ? String(inicial.preco).replace(".", ",") : "");
+  const mudarPreco = (txt: string) => {
+    const limpo = txt.replace(/[^\d.,]/g, "");
+    setPrecoTxt(limpo);
+    const n = Number(limpo.replace(",", "."));
+    set("preco", limpo && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null);
+  };
   const [pausado, setPausado] = useState(true);
   const [pub, setPub] = useState<{ ok?: boolean; id?: string; link?: string | null; status?: string; error?: string; resposta?: unknown; avisoDescricao?: unknown; respostaCriacao?: unknown; fotosEnviadas?: number; fotosNoML?: number | null } | null>(null);
 
@@ -194,7 +205,7 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
 
           <label className="flex flex-col gap-1 text-sm">
             Preço (R$){r.preco_faixa && <span className="text-xs text-gray-500">faixa vista na web: {r.preco_faixa.minimo} a {r.preco_faixa.maximo}</span>}
-            <input className={inputBase} inputMode="decimal" value={r.preco ?? ""} onChange={(e) => set("preco", e.target.value ? Number(e.target.value.replace(",", ".")) || null : null)} />
+            <input className={inputBase} inputMode="decimal" value={precoTxt} onChange={(e) => mudarPreco(e.target.value)} />
           </label>
 
           <div className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
