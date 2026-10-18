@@ -78,7 +78,20 @@ export async function POST(request: NextRequest) {
     /* sem a informação: a tela trata como desconhecido */
   }
 
+  // Preços que dão a mesma sobra nas duas opções (estimativa: comissão e frete variam um pouco com o preço)
+  //  base sem frete grátis → com frete: P = (sobra + fixa + frete) / (1 − %)   |   base com frete grátis → sem frete: P = P1 − frete / (1 − %)
+  const pct = fee?.sale_fee_details?.percentage_fee != null ? fee.sale_fee_details.percentage_fee / 100 : null;
+  const fixa = fee?.sale_fee_details?.fixed_fee ?? 0;
+  let precoEquivalenteComFrete: number | null = null;
+  let precoEquivalenteSemFrete: number | null = null;
+  if (pct != null && pct < 1 && fretePago != null && fee?.sale_fee_amount != null) {
+    precoEquivalenteComFrete = Math.ceil(((r.preco - fee.sale_fee_amount + fixa + fretePago) / (1 - pct)) * 100) / 100;
+    precoEquivalenteSemFrete = Math.max(0.01, Math.floor((r.preco - fretePago / (1 - pct)) * 100) / 100);
+  }
+
   return NextResponse.json({
+    precoEquivalenteComFrete,
+    precoEquivalenteSemFrete,
     freteObrigatorio,
     reputacao: reputacao ? { nivel: reputacao.level_id ?? null, status: reputacao.power_seller_status ?? null } : null,
     candidatosFrete,

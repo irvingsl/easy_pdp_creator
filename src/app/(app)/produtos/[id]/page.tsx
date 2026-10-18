@@ -10,6 +10,7 @@ import { IdentificarIA, type Identificacao } from "@/components/identificar-ia";
 import { EstoqueProduto } from "@/components/estoque-produto";
 import { Etapa } from "@/components/etapa";
 import { AnuncioAtualizar } from "@/components/anuncio-atualizar";
+import { AnuncioSegundaOpcao } from "@/components/anuncio-segunda-opcao";
 import { AnuncioCompat } from "@/components/anuncio-compat";
 import { AnuncioQualidade } from "@/components/anuncio-qualidade";
 import { DadosConfirmadosForm } from "@/components/dados-confirmados";
@@ -144,6 +145,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
               </li>
             ))}
           </ul>
+          <AnuncioSegundaOpcao produtoId={produto.id} precoBase={rascunho?.preco ?? null} />
         </Etapa>
       )}
 

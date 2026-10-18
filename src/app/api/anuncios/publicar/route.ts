@@ -12,7 +12,7 @@ export const maxDuration = 60;
  * cria o anúncio pausado quando `pausado` (recomendado no primeiro teste).
  */
 export async function POST(request: NextRequest) {
-  const { produtoId, confirmar, pausado = true } = (await request.json().catch(() => ({}))) as { produtoId?: string; confirmar?: boolean; pausado?: boolean };
+  const { produtoId, confirmar, pausado = true, precoOverride, freteGratisOverride } = (await request.json().catch(() => ({}))) as { produtoId?: string; confirmar?: boolean; pausado?: boolean; precoOverride?: number; freteGratisOverride?: boolean };
   if (!produtoId) return NextResponse.json({ error: "produtoId obrigatório" }, { status: 400 });
   if (confirmar !== true) return NextResponse.json({ error: "publicação precisa de confirmação explícita" }, { status: 400 });
 
@@ -29,7 +29,11 @@ export async function POST(request: NextRequest) {
     if ("categorias" in p) return NextResponse.json({ error: "escolha uma categoria antes de publicar" }, { status: 400 });
     const { rascunho: r, payload } = p;
     if (!(p.estoque > 0)) return NextResponse.json({ error: "defina o estoque do produto (maior que zero) antes de publicar" }, { status: 400 });
-    if (!r.preco || r.preco <= 0) return NextResponse.json({ error: "informe o preço" }, { status: 400 });
+    // segunda opção de venda do mesmo produto: outro preço e/ou outra condição de frete
+    const preco = typeof precoOverride === "number" && precoOverride > 0 ? Math.round(precoOverride * 100) / 100 : r.preco;
+    if (typeof precoOverride === "number" && precoOverride > 0) payload.price = preco ?? 0;
+    if (typeof freteGratisOverride === "boolean") payload.shipping.free_shipping = freteGratisOverride;
+    if (!preco || preco <= 0) return NextResponse.json({ error: "informe o preço" }, { status: 400 });
     if (!p.fotoPrincipalOk) return NextResponse.json({ error: "a foto principal precisa ser a versão com fundo branco: use \"Tornar principal\" em uma foto processada" }, { status: 400 });
     if (!payload.pictures.length) return NextResponse.json({ error: "o produto precisa de ao menos uma foto processada" }, { status: 400 });
     if (r.compatibilidade.some((c) => c.origem !== "confirmado")) {
@@ -56,7 +60,7 @@ export async function POST(request: NextRequest) {
       conta_id: conta.id,
       marketplace: "mercadolivre",
       external_id: item.id,
-      preco: r.preco,
+      preco,
       status,
       resposta_criacao: criado.body,
       ultimo_sync_em: new Date().toISOString(),
