@@ -40,7 +40,9 @@ function Raw({ body }: { body: unknown }) {
 export default async function ContaPage(props: PageProps<"/conta">) {
   const sp = await props.searchParams;
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
-  const item = typeof sp.item === "string" ? sp.item.trim() : "";
+  // aceita o ID (MLB123… ou MLBU123…) ou a URL do anúncio inteira
+  const itemBruto = typeof sp.item === "string" ? sp.item.trim() : "";
+  const item = itemBruto.match(/MLBU?-?\d+/i)?.[0].replace("-", "").toUpperCase() ?? itemBruto;
   const erro = typeof sp.erro === "string" ? sp.erro : "";
 
   const supabase = await createClient();
@@ -76,7 +78,14 @@ export default async function ContaPage(props: PageProps<"/conta">) {
         const top = (dominios.body as Domain[] | null)?.[0];
         if (top) catalogo = { cat: top.category_id, r: await mlGet(`/categories/${top.category_id}/attributes`, token) };
       }
-      if (item) anuncio = await mlGet(`/items/${encodeURIComponent(item)}`, token);
+      if (item) {
+        // MLBU = produto do usuário (família de anúncios); MLB = anúncio. O endpoint depende do prefixo.
+        anuncio = await mlGet(item.startsWith("MLBU") ? `/user-products/${encodeURIComponent(item)}` : `/items/${encodeURIComponent(item)}`, token);
+        if (!anuncio.ok && item.startsWith("MLBU")) {
+          // alguns produtos só aparecem pela busca de anúncios da família
+          anuncio = await mlGet(`/items/search?user_product_id=${encodeURIComponent(item)}`, token);
+        }
+      }
     }
   }
 
@@ -109,7 +118,7 @@ export default async function ContaPage(props: PageProps<"/conta">) {
               <input name="q" defaultValue={q} placeholder="código OEM ou palavras-chave" className={inputBase} />
               <button className={btnSecondary}>Buscar</button>
             </div>
-            <input name="item" defaultValue={item} placeholder="(opcional) ID de anúncio, ex.: MLB1234567890" className={inputBase} />
+            <input name="item" defaultValue={itemBruto} placeholder="(opcional) ID ou URL de anúncio, ex.: MLB1234567890 ou MLBU1234567890" className={inputBase} />
           </form>
 
           {porVariante.length > 0 && (
@@ -180,7 +189,7 @@ export default async function ContaPage(props: PageProps<"/conta">) {
 
           {anuncio && (
             <div className="flex flex-col gap-2">
-              <h3 className="font-medium">4. Anúncio por ID — /items/{item}</h3>
+              <h3 className="font-medium">4. Anúncio ou produto por ID — {item}</h3>
               <Status label="items" r={anuncio} />
               {it ? (
                 <p className="text-sm">{it.title} · <strong>R$ {it.price}</strong> · {it.status} · categoria {it.category_id}{it.catalog_product_id ? ` · catálogo ${it.catalog_product_id}` : ""}</p>
