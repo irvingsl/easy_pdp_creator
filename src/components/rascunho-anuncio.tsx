@@ -394,10 +394,18 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
                   <table className="w-full text-left">
                     <tbody>
                       {linhas.map(([k, v, forte]) => (
-                        <tr key={k} className={`border-t ${forte ? "border-gray-300 font-medium dark:border-gray-700" : "border-gray-200 dark:border-gray-800"}`}><td className="py-1 pr-2">{k}</td><td className="py-1 text-right">{v}</td></tr>
+                        <tr key={k} className={`border-t ${forte ? "border-gray-300 font-medium dark:border-gray-700" : "border-gray-200 dark:border-gray-800"}`}><td className="py-1 pr-2">{k}</td><td className="whitespace-nowrap py-1 text-right">{v}</td></tr>
                       ))}
                     </tbody>
                   </table>
+                  {com != null && pago != null && preco - com - pago < 0 && (
+                    <p className="rounded-lg bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
+                      Com este preço você teria prejuízo de {reais(Math.abs(preco - com - pago))} por venda (antes do custo da peça). Aumente o preço antes de publicar.
+                    </p>
+                  )}
+                  {com != null && pago != null && preco - com - pago >= 0 && (
+                    <p className="text-xs text-gray-500">Isso é antes do custo da peça e de impostos.</p>
+                  )}
                   {pago == null && <p className="text-xs text-gray-500">O ML não informou o frete desta conta. Digite o valor que o ML mostra para você:</p>}
                   <label className="flex flex-col gap-1 text-xs text-gray-500">
                     Frete diferente do calculado? Digite o que o ML mostra (R$)
