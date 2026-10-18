@@ -1,4 +1,18 @@
 /** Rascunho de anúncio (independente de marketplace); o vendedor revisa e edita antes de publicar. */
+/** Campo da ficha técnica da categoria do ML, com o valor que o app (ou o vendedor) preencheu. */
+export type CampoFicha = {
+  id: string;
+  nome: string;
+  tipo: string;
+  valor: string;
+  /** para campos de lista: id da opção escolhida */
+  valor_id?: string;
+  origem?: "confirmado" | "lido_no_item" | "contado_na_foto" | "medido" | "vendedor";
+  obrigatorio?: boolean;
+  opcoes?: { id: string; name: string }[];
+  unidades?: string[];
+};
+
 export type Rascunho = {
   titulo: string;
   descricao: string;
@@ -7,6 +21,7 @@ export type Rascunho = {
   preco: number | null;
   preco_faixa: { minimo: number; maximo: number } | null;
   avisos: string[];
+  ficha?: CampoFicha[];
   /** escolhas do vendedor para o Mercado Livre */
   categoria_id?: string;
   condicao?: "new" | "used";

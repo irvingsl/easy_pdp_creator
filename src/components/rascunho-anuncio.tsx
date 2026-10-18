@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { GARANTIA_PADRAO, TITULO_MAX, type Rascunho } from "@/domain/rascunho";
+import { GARANTIA_PADRAO, TITULO_MAX, type CampoFicha, type Rascunho } from "@/domain/rascunho";
 import { CopyBlock } from "./copy-block";
 import { btnPrimary, btnSecondary, inputBase } from "./ui";
 
@@ -124,6 +124,31 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
     const n = Number(limpo.replace(",", "."));
     set("preco", limpo && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null);
   };
+  async function preencherFicha() {
+    if (!r) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const { error } = await createClient().from("produtos").update({ rascunho: r }).eq("id", produtoId);
+      if (error) return setMsg(error.message);
+      const res = await fetch("/api/rascunho/ficha", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ produtoId }) });
+      const txt = await res.text();
+      let j: { ficha?: CampoFicha[]; error?: string } = {};
+      try {
+        j = JSON.parse(txt);
+      } catch {
+        return setMsg(res.status === 504 ? "Demorou demais, tente de novo." : `Resposta inesperada (${res.status}).`);
+      }
+      if (j.ficha) setR((p) => (p ? { ...p, ficha: j.ficha } : p));
+      else setMsg(j.error ?? "Falha ao preencher a ficha");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const setCampo = (id: string, valor: string, valorId?: string) =>
+    setR((p) => (p ? { ...p, ficha: (p.ficha ?? []).map((f) => (f.id === id ? { ...f, valor, valor_id: valorId, origem: "vendedor" } : f)) } : p));
+
   const [pausado, setPausado] = useState(true);
   const [pub, setPub] = useState<{ ok?: boolean; id?: string; link?: string | null; status?: string; error?: string; resposta?: unknown; avisoDescricao?: unknown; respostaCriacao?: unknown; fotosEnviadas?: number; fotosNoML?: number | null } | null>(null);
 
@@ -261,6 +286,36 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
                   onChange={(e) => set("embalagem", { altura: "", largura: "", comprimento: "", peso: "", ...r.embalagem, [k]: e.target.value })}
                 />
               ))}
+            </div>
+            <div className="flex flex-col gap-2 rounded-lg border border-gray-200 p-2 dark:border-gray-800">
+              <span className="font-medium">
+                Ficha técnica {r.ficha ? `(${r.ficha.filter((f) => f.valor.trim()).length} de ${r.ficha.length} preenchidos)` : ""}
+              </span>
+              <p className="text-xs text-gray-500">Campos que a categoria pede. A IA só preenche o que você confirmou, o que está gravado no item ou o que foi contado/medido nas fotos; o resto fica para você.</p>
+              <button type="button" className={btnSecondary} disabled={busy || !r.categoria_id} onClick={preencherFicha}>
+                {r.ficha ? "Preencher de novo os vazios" : "Preencher ficha com os dados do produto"}
+              </button>
+              {!r.categoria_id && <p className="text-xs text-amber-700 dark:text-amber-300">Escolha a categoria (Sugerir) primeiro.</p>}
+              {[...(r.ficha ?? [])]
+                .sort((a, b) => Number(!!b.obrigatorio) - Number(!!a.obrigatorio) || Number(!!b.valor.trim()) - Number(!!a.valor.trim()))
+                .map((f) => (
+                  <label key={f.id} className="flex flex-col gap-1">
+                    <span className="text-xs text-gray-600 dark:text-gray-400">
+                      {f.nome}
+                      {f.obrigatorio ? " · obrigatório" : ""}
+                      {f.unidades?.length && f.tipo === "number_unit" ? ` (${f.unidades.slice(0, 4).join(", ")})` : ""}
+                      {f.valor.trim() && f.origem && f.origem !== "vendedor" ? ` · ${ORIGEM[f.origem] ?? f.origem.replaceAll("_", " ")}` : ""}
+                    </span>
+                    {f.tipo === "list" && f.opcoes?.length ? (
+                      <select className={inputBase} value={f.valor_id ?? ""} onChange={(e) => setCampo(f.id, f.opcoes!.find((o) => o.id === e.target.value)?.name ?? "", e.target.value || undefined)}>
+                        <option value="">(não informar)</option>
+                        {f.opcoes.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                      </select>
+                    ) : (
+                      <input className={inputBase} value={f.valor} onChange={(e) => setCampo(f.id, e.target.value)} />
+                    )}
+                  </label>
+                ))}
             </div>
             <button type="button" className={btnSecondary} disabled={busy} onClick={() => chamarML(false)}>Validar no Mercado Livre (não publica)</button>
             <label className="flex items-center gap-2">

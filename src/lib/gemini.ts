@@ -457,3 +457,43 @@ export async function gerarRascunho(fatos: string, budget = BUDGET_MS) {
   }
   return { model: null, rascunho: null };
 }
+
+function buildFichaPrompt(fatos: string, campos: unknown[]) {
+  return `Você preenche a ficha técnica de um anúncio de marketplace. Abaixo há FATOS sobre o item e a lista de CAMPOS da categoria.
+Para cada campo, preencha somente se houver evidência nos fatos.
+
+Regras:
+1. Use apenas fatos confirmados pelo vendedor, gravados/lidos no item, contados ou medidos nas fotos. NÃO use nada marcado como vindo da web, de pesquisa ou "não confirmado pelo vendedor".
+2. Não invente e não deduza por semelhança com outras peças. Sem evidência, omita o campo.
+3. Campo "number_unit": "valor" com número e unidade permitida (ex.: "200 mm"). Campo "number": só o número. Campo "list": devolva "valor_id" de uma das opções (e "valor" com o nome dela).
+4. "Código OEM" só com número que os fatos digam ser OEM/original; o número gravado de um fabricante de reposição não é OEM.
+5. "Origem" só se houver texto gravado de fabricação (ex.: "Indústria Brasileira" → "Brasil").
+6. Registros e certificações (ex.: INMETRO) só se o número aparecer nos fatos.
+
+Responda apenas com um bloco \`\`\`json: uma lista [{ "id": string, "valor": string, "valor_id": string|null, "origem": "confirmado"|"lido_no_item"|"contado_na_foto"|"medido" }].
+
+CAMPOS:
+${JSON.stringify(campos)}
+
+FATOS:
+${fatos}`;
+}
+
+export async function preencherFicha(fatos: string, campos: unknown[], budget = BUDGET_MS) {
+  const t0 = Date.now();
+  for (const m of ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]) {
+    if (restante(t0, budget) < 8000) break;
+    const b = await callGemini(m, [{ text: buildFichaPrompt(fatos, campos) }], false, 4096, Math.min(restante(t0, budget), 40000));
+    if (!b.res.ok) continue;
+    const texto = readGrounding(b.body, false).text;
+    const ini = texto.indexOf("[");
+    const fim = texto.lastIndexOf("]");
+    if (ini < 0 || fim < ini) continue;
+    try {
+      return { model: m, itens: JSON.parse(texto.slice(ini, fim + 1)) as { id: string; valor: string; valor_id?: string | null; origem?: string }[] };
+    } catch {
+      continue;
+    }
+  }
+  return { model: null, itens: null };
+}

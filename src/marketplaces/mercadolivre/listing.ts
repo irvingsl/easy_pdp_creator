@@ -1,5 +1,5 @@
 import { mlGet } from "./oauth";
-import { GARANTIA_PADRAO, type Rascunho } from "@/domain/rascunho";
+import { GARANTIA_PADRAO, type CampoFicha, type Rascunho } from "@/domain/rascunho";
 import type { DadosConfirmados } from "@/domain/dados-confirmados";
 
 export type CategoriaSugerida = { id: string; nome: string; caminho: string };
@@ -17,7 +17,7 @@ export async function sugerirCategorias(token: string, texto: string): Promise<C
   );
 }
 
-type AtributoCategoria = { id: string; name: string; tags?: Record<string, boolean>; values?: { id: string; name: string }[] };
+export type AtributoCategoria = { id: string; name: string; value_type?: string; tags?: Record<string, boolean>; values?: { id: string; name: string }[]; allowed_units?: { id: string; name: string }[]; default_unit?: string };
 
 export async function atributosDaCategoria(token: string, categoria: string): Promise<AtributoCategoria[]> {
   const r = await mlGet(`/categories/${categoria}/attributes`, token);
@@ -52,6 +52,11 @@ export function montarAnuncio(opts: {
   // O ML ignora PACKAGE_* nos atributos ("not modifiable"); as medidas de envio vão em shipping.dimensions ("AxLxC,peso")
   const num = (v: string) => v.replace(",", ".").trim();
   const dimensions = e?.altura && e.largura && e.comprimento && e.peso ? `${num(e.altura)}x${num(e.largura)}x${num(e.comprimento)},${num(e.peso)}` : undefined;
+  // ficha técnica preenchida (só campos com valor e que ainda não foram enviados acima)
+  for (const f of r.ficha ?? []) {
+    if (!f.valor.trim() || attrs.some((a) => a.id === f.id)) continue;
+    attrs.push(f.tipo === "list" && f.valor_id ? { id: f.id, value_id: f.valor_id } : { id: f.id, value_name: f.valor.trim() });
+  }
   const g = r.garantia ?? GARANTIA_PADRAO;
   const sale_terms = g && g.tipo !== "sem"
     ? [
@@ -85,6 +90,22 @@ export function analisarValidacao(res: { ok: boolean; status: number; body: unkn
   // sem causas legíveis e com status de erro: reprovado por segurança
   const aceito = res.ok || (causas.length > 0 && erros.length === 0);
   return { aceito, erros, avisos };
+}
+
+const FORA_DA_FICHA = /^(BRAND|PART_NUMBER|VEHICLE_TYPE|ITEM_CONDITION|SELLER_SKU|PACKAGE_.*|GTIN|EAN|MPN)$/;
+
+/** Campos da ficha técnica que o vendedor pode preencher (fora os que o app já trata à parte). */
+export function camposDaFicha(atributos: AtributoCategoria[]): Omit<CampoFicha, "valor">[] {
+  return atributos
+    .filter((a) => !FORA_DA_FICHA.test(a.id) && !a.tags?.hidden && !a.tags?.read_only && !a.tags?.fixed)
+    .map((a) => ({
+      id: a.id,
+      nome: a.name,
+      tipo: a.value_type ?? "string",
+      obrigatorio: !!(a.tags?.required || a.tags?.catalog_required),
+      ...(a.value_type === "list" && a.values?.length ? { opcoes: a.values.slice(0, 80) } : {}),
+      ...(a.allowed_units?.length ? { unidades: a.allowed_units.map((u) => u.name) } : {}),
+    }));
 }
 
 /** Descrição final: o texto do vendedor mais a lista de compatibilidade confirmada (se o texto ainda não a trouxer). */
