@@ -49,9 +49,16 @@ export function montarAnuncio(opts: {
   if (numero) attrs.push({ id: "PART_NUMBER", value_name: numero });
   const tipoVeiculo = atributosCategoria.find((a) => a.id === "VEHICLE_TYPE")?.values?.find((v) => /carro|caminhonete/.test(norm(v.name)));
   if (tipoVeiculo) attrs.push({ id: "VEHICLE_TYPE", value_id: tipoVeiculo.id });
-  // O ML ignora PACKAGE_* nos atributos ("not modifiable"); as medidas de envio vão em shipping.dimensions ("AxLxC,peso")
+  // Embalagem do vendedor: o ML ignora PACKAGE_* ("not modifiable") e guarda em SELLER_PACKAGE_*
   const num = (v: string) => v.replace(",", ".").trim();
-  const dimensions = e?.altura && e.largura && e.comprimento && e.peso ? `${num(e.altura)}x${num(e.largura)}x${num(e.comprimento)},${num(e.peso)}` : undefined;
+  if (e?.altura && e.largura && e.comprimento && e.peso) {
+    attrs.push(
+      { id: "SELLER_PACKAGE_HEIGHT", value_name: `${num(e.altura)} cm` },
+      { id: "SELLER_PACKAGE_WIDTH", value_name: `${num(e.largura)} cm` },
+      { id: "SELLER_PACKAGE_LENGTH", value_name: `${num(e.comprimento)} cm` },
+      { id: "SELLER_PACKAGE_WEIGHT", value_name: `${num(e.peso)} g` },
+    );
+  }
   // ficha técnica preenchida (só campos com valor e que ainda não foram enviados acima)
   for (const f of r.ficha ?? []) {
     if (!f.valor.trim() || attrs.some((a) => a.id === f.id)) continue;
@@ -76,7 +83,7 @@ export function montarAnuncio(opts: {
     listing_type_id: "gold_special",
     pictures: opts.fotos.map((source) => ({ source })),
     attributes: attrs,
-    shipping: { mode: "me2", local_pick_up: false, free_shipping: false, ...(dimensions ? { dimensions } : {}) },
+    shipping: { mode: "me2", local_pick_up: false, free_shipping: false },
   };
 }
 
@@ -92,7 +99,7 @@ export function analisarValidacao(res: { ok: boolean; status: number; body: unkn
   return { aceito, erros, avisos };
 }
 
-const FORA_DA_FICHA = /^(BRAND|PART_NUMBER|VEHICLE_TYPE|ITEM_CONDITION|SELLER_SKU|PACKAGE_.*|GTIN|EAN|MPN)$/;
+const FORA_DA_FICHA = /^(BRAND|PART_NUMBER|VEHICLE_TYPE|ITEM_CONDITION|SELLER_SKU|(SELLER_)?PACKAGE_.*|GTIN|EAN|MPN)$/;
 
 /** Campos da ficha técnica que o vendedor pode preencher (fora os que o app já trata à parte). */
 export function camposDaFicha(atributos: AtributoCategoria[]): Omit<CampoFicha, "valor">[] {
