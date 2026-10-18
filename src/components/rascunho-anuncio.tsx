@@ -78,6 +78,8 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
   type Calc = { preco?: number; comissao?: number | null; detalhes?: { percentage_fee?: number; fixed_fee?: number } | null; freteTabela?: number | null; brutos?: unknown; error?: string };
   const [calc, setCalc] = useState<Calc | null>(null);
   const [freteReal, setFreteReal] = useState("");
+  // desconto de reputação no frete (visto no ML: tabela R$ 38,10, você paga R$ 19,05)
+  const [descFrete, setDescFrete] = useState("50");
 
   async function calcular() {
     if (!r) return;
@@ -279,32 +281,40 @@ export function RascunhoAnuncio({ produtoId, inicial }: { produtoId: string; ini
             {calc?.error && <p className="text-red-600">{calc.error}</p>}
             {calc?.preco !== undefined && (() => {
               const preco = calc.preco;
-              const com = calc.comissao ?? 0;
+              const com = calc.comissao;
               const tabela = calc.freteTabela;
+              const desc = Math.min(100, Math.max(0, Number(descFrete.replace(",", ".")) || 0));
               const informado = freteReal.trim() ? Number(freteReal.replace(",", ".")) : NaN;
-              const frete = Number.isFinite(informado) ? informado : tabela;
-              const linhas: [string, string][] = [
+              const pago = Number.isFinite(informado) ? informado : tabela != null ? Math.round(tabela * (100 - desc)) / 100 : null;
+              const liquido = (frete: number | null | undefined) => (com == null || frete == null ? "?" : reais(preco - com - frete));
+              const linhas: [string, string, boolean?][] = [
                 ["Preço de venda", reais(preco)],
-                [`Comissão do ML${calc.detalhes?.percentage_fee != null ? ` (${calc.detalhes.percentage_fee}%${calc.detalhes.fixed_fee ? ` + ${reais(calc.detalhes.fixed_fee)} fixos` : ""})` : ""}`, calc.comissao == null ? "não obtida" : `− ${reais(com)}`],
-                ["Sobra sem contar o frete", calc.comissao == null ? "?" : reais(preco - com)],
-                [Number.isFinite(informado) ? "Frete (valor que você informou)" : "Frete grátis (custo de tabela do ML)", frete == null ? "não obtido" : `− ${reais(frete)}`],
+                [`Comissão do ML${calc.detalhes?.percentage_fee != null ? ` (${calc.detalhes.percentage_fee}%${calc.detalhes.fixed_fee ? ` + ${reais(calc.detalhes.fixed_fee)} fixos` : ""})` : ""}`, com == null ? "não obtida" : `− ${reais(com)}`],
+                ["Sobra sem contar o frete", liquido(0)],
+                ["Frete de tabela (sem desconto)", tabela == null ? "não obtido" : `− ${reais(tabela)}`],
+                ["Sobra pagando o frete de tabela", liquido(tabela)],
+                [Number.isFinite(informado) ? "Frete que você informou" : `Frete com seu desconto (${desc}%)`, pago == null ? "não obtido" : `− ${reais(pago)}`],
+                ["Sobra com o seu frete", liquido(pago), true],
               ];
               return (
                 <div className="flex flex-col gap-2">
                   <table className="w-full text-left">
                     <tbody>
-                      {linhas.map(([k, v]) => (
-                        <tr key={k} className="border-t border-gray-200 dark:border-gray-800"><td className="py-1 pr-2">{k}</td><td className="py-1 text-right">{v}</td></tr>
+                      {linhas.map(([k, v, forte]) => (
+                        <tr key={k} className={`border-t ${forte ? "border-gray-300 font-medium dark:border-gray-700" : "border-gray-200 dark:border-gray-800"}`}><td className="py-1 pr-2">{k}</td><td className="py-1 text-right">{v}</td></tr>
                       ))}
-                      {frete != null && calc.comissao != null && (
-                        <tr className="border-t border-gray-300 font-medium dark:border-gray-700"><td className="py-1">Sobra com frete</td><td className="py-1 text-right">{reais(preco - com - frete)}</td></tr>
-                      )}
                     </tbody>
                   </table>
-                  <label className="flex flex-col gap-1 text-xs text-gray-500">
-                    O frete real depende da sua reputação (o ML dá desconto). Se você vê outro valor no ML, digite aqui:
-                    <input className={inputBase} inputMode="decimal" placeholder="Frete que o ML mostra para você (R$)" value={freteReal} onChange={(e) => setFreteReal(e.target.value)} />
-                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex flex-col gap-1 text-xs text-gray-500">
+                      Seu desconto no frete (%)
+                      <input className={inputBase} inputMode="decimal" value={descFrete} onChange={(e) => setDescFrete(e.target.value)} />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-gray-500">
+                      Ou o frete que o ML mostra (R$)
+                      <input className={inputBase} inputMode="decimal" placeholder="ex.: 19,05" value={freteReal} onChange={(e) => setFreteReal(e.target.value)} />
+                    </label>
+                  </div>
                   <CopyBlock text={JSON.stringify(calc.brutos, null, 2)} label="Copiar resposta do ML" />
                 </div>
               );
