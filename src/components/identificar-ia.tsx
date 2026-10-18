@@ -97,7 +97,9 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false }: { produ
       setFase("4/4 Conferindo no catálogo do Mercado Livre...");
       const final = await etapa("final", { produtoId, cego, etapa: "final", parcial });
       setRes(final as unknown as Identificacao);
+      window.dispatchEvent(new CustomEvent("identificacao-concluida", { detail: { produtoId } }));
     } catch (e) {
+      window.dispatchEvent(new CustomEvent("identificacao-falhou", { detail: { produtoId } }));
       setError(e instanceof Error ? e.message : "Erro inesperado");
       // se uma etapa falhar, o resultado parcial deixa de dizer "em andamento"
       setRes((r) => (r ? { ...r, emAndamento: false } : r));

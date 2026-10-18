@@ -15,6 +15,9 @@ export function NovoProdutoForm() {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
   const [oem, setOem] = useState("");
+  const [marca, setMarca] = useState("");
+  const [veiculo, setVeiculo] = useState("");
+  const [qtd, setQtd] = useState("1");
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -57,12 +60,22 @@ export function NovoProdutoForm() {
 
       const { data: produto, error: pErr } = await supabase
         .from("produtos")
-        .insert({ oem_code: oem.trim() || null })
+        .insert({
+          oem_code: oem.trim() || null,
+          // o que o vendedor já sabe entra como fato confirmado e guia a identificação
+          dados_confirmados: {
+            ...(marca.trim() ? { marca: marca.trim() } : {}),
+            ...(oem.trim() ? { numero_peca: oem.trim() } : {}),
+            ...(veiculo.trim() ? { veiculo: veiculo.trim() } : {}),
+          },
+        })
         .select("id")
         .single();
       if (pErr) throw pErr;
 
       produtoCriado = produto.id;
+      const quantidade = Math.max(0, Math.floor(Number(qtd) || 0));
+      if (quantidade > 0) await supabase.from("movimentacoes_estoque").insert({ produto_id: produto.id, delta: quantidade, motivo: "cadastro", origem: "manual" });
       // Só salva os originais (rápido e em paralelo). O fundo é removido na página do produto, onde a identificação
       // por IA, que usa as fotos originais, já pode rodar ao mesmo tempo.
       setProgress({ done: 0, total: smalls.length, step: "Enviando fotos" });
@@ -145,16 +158,33 @@ export function NovoProdutoForm() {
         )}
       </section>
 
-      <label className="flex flex-col gap-1">
-        <span className="font-medium">Código OEM / fabricante <span className="font-normal text-gray-500">(opcional)</span></span>
-        <input value={oem} onChange={(e) => setOem(e.target.value)} disabled={busy} className={inputBase} />
-      </label>
+      <section className="flex flex-col gap-3">
+        <h2 className="font-medium">O que você já sabe <span className="font-normal text-gray-500">(opcional, ajuda a IA)</span></h2>
+        <label className="flex flex-col gap-1 text-sm">
+          Código gravado na peça / fabricante
+          <input value={oem} onChange={(e) => setOem(e.target.value)} disabled={busy} className={inputBase} />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            Marca
+            <input value={marca} onChange={(e) => setMarca(e.target.value)} disabled={busy} className={inputBase} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Quantidade em estoque
+            <input value={qtd} onChange={(e) => setQtd(e.target.value.replace(/\D/g, ""))} inputMode="numeric" disabled={busy} className={inputBase} />
+          </label>
+        </div>
+        <label className="flex flex-col gap-1 text-sm">
+          Veículo / aplicação
+          <input value={veiculo} onChange={(e) => setVeiculo(e.target.value)} disabled={busy} className={inputBase} />
+        </label>
+      </section>
 
       <button disabled={busy || !files.length} className={btnPrimary}>
         {busy
           ? `Foto ${progress!.done + 1} de ${progress!.total}: ${progress!.step}...`
           : files.length
-            ? `Salvar ${files.length} foto${files.length > 1 ? "s" : ""}`
+            ? `Seguir com ${files.length} foto${files.length > 1 ? "s" : ""}`
             : "Escolha ao menos uma foto"}
       </button>
       {notice && (

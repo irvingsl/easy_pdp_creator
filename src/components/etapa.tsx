@@ -8,6 +8,12 @@ import { useState, type ReactNode } from "react";
  */
 export function Etapa({ n, titulo, resumo, aberto = false, children }: { n?: number; titulo: string; resumo?: string; aberto?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(aberto);
+  // quando a etapa passa a ser a próxima pendente, abre; fechar continua sendo escolha do usuário
+  const [anterior, setAnterior] = useState(aberto);
+  if (aberto !== anterior) {
+    setAnterior(aberto);
+    if (aberto) setOpen(true);
+  }
   return (
     <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className="group rounded-lg border border-gray-200 dark:border-gray-800">
       <summary className="flex cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden">

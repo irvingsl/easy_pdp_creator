@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { GARANTIA_PADRAO, TITULO_MAX, type CampoFicha, type Rascunho } from "@/domain/rascunho";
 import { CopyBlock } from "./copy-block";
@@ -15,7 +15,7 @@ const ORIGEM: Record<string, string> = {
   sugerido_web: "sugestão da web, confirme",
 };
 
-export function RascunhoAnuncio({ produtoId, inicial, estoque }: { produtoId: string; inicial: Rascunho | null; estoque: number }) {
+export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false, temIdentificacao = false }: { produtoId: string; inicial: Rascunho | null; estoque: number; autoStart?: boolean; temIdentificacao?: boolean }) {
   const router = useRouter();
   const [r, setR] = useState<Rascunho | null>(inicial);
   const [busy, setBusy] = useState(false);
@@ -43,6 +43,63 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque }: { produtoId: st
       setBusy(false);
     }
   }
+
+  /**
+   * Piloto automático: depois da identificação, gera o rascunho, escolhe a categoria sugerida pelo ML e preenche a ficha técnica.
+   * O vendedor só precisa decidir preço, embalagem e fotos.
+   */
+  async function automatico() {
+    setBusy(true);
+    try {
+      const post = async (url: string, corpo: Record<string, unknown>) => (await (await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corpo) })).json().catch(() => ({}))) as Record<string, unknown>;
+      setMsg("Gerando o rascunho…");
+      const j1 = await post("/api/rascunho", { produtoId });
+      if (!j1.rascunho) return setMsg(String(j1.error ?? "Não consegui gerar o rascunho; use o botão acima."));
+      let novo = j1.rascunho as Rascunho;
+      setR(novo);
+      setPrecoTxt("");
+      setMsg("Escolhendo a categoria no Mercado Livre…");
+      const jc = (await post("/api/anuncios/validar", { produtoId, sugerir: true })) as { categorias?: { id: string }[] };
+      const cat = jc.categorias?.[0]?.id;
+      if (cat) {
+        novo = { ...novo, categoria_id: cat };
+        setR(novo);
+        await createClient().from("produtos").update({ rascunho: novo }).eq("id", produtoId);
+        setMsg("Preenchendo a ficha técnica…");
+        const jf = (await post("/api/rascunho/ficha", { produtoId })) as { ficha?: CampoFicha[] };
+        if (jf.ficha) {
+          novo = { ...novo, ficha: jf.ficha };
+          setR(novo);
+        }
+      }
+      setMsg("Pronto: confira as fotos, informe o preço e a embalagem e publique.");
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const iniciouAuto = useRef(false);
+  useEffect(() => {
+    if (!autoStart || inicial || iniciouAuto.current) return;
+    const disparar = () => {
+      if (iniciouAuto.current) return;
+      iniciouAuto.current = true;
+      automatico();
+    };
+    if (temIdentificacao) {
+      disparar();
+      return;
+    }
+    const falhou = () => setMsg("A identificação não terminou. Corrija os dados e use \"Gerar rascunho\".");
+    window.addEventListener("identificacao-concluida", disparar);
+    window.addEventListener("identificacao-falhou", falhou);
+    return () => {
+      window.removeEventListener("identificacao-concluida", disparar);
+      window.removeEventListener("identificacao-falhou", falhou);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function salvar() {
     if (!r) return;
@@ -164,8 +221,6 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque }: { produtoId: st
     if (!r.preco) pendencias.push("Informar o preço.");
     if (!(estoque > 0)) pendencias.push("Informar o estoque do produto (no topo da página).");
     if (!r.categoria_id) pendencias.push("Escolher a categoria (Mercado Livre → Sugerir).");
-    const naoConf = r.compatibilidade.filter((c) => c.origem !== "confirmado").length;
-    if (naoConf) pendencias.push(`Confirmar ou remover ${naoConf} compatibilidade(s) sugerida(s) pela web.`);
     if (!r.embalagem?.altura || !r.embalagem.largura || !r.embalagem.comprimento || !r.embalagem.peso) pendencias.push("Informar as medidas e o peso da embalagem.");
     const obrig = (r.ficha ?? []).filter((f) => f.obrigatorio && !f.valor.trim());
     if (obrig.length) pendencias.push(`Preencher na ficha técnica: ${obrig.map((f) => f.nome).join(", ")}.`);

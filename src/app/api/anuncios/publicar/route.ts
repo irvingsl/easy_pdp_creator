@@ -36,9 +36,6 @@ export async function POST(request: NextRequest) {
     if (!preco || preco <= 0) return NextResponse.json({ error: "informe o preço" }, { status: 400 });
     if (!p.fotoPrincipalOk) return NextResponse.json({ error: "a foto principal precisa ser a versão com fundo branco: use \"Tornar principal\" em uma foto processada" }, { status: 400 });
     if (!payload.pictures.length) return NextResponse.json({ error: "o produto precisa de ao menos uma foto processada" }, { status: 400 });
-    if (r.compatibilidade.some((c) => c.origem !== "confirmado")) {
-      return NextResponse.json({ error: "há compatibilidades sugeridas pela web sem confirmar: confirme ou remova antes de publicar" }, { status: 400 });
-    }
 
     const v = await mlPost("/items/validate", token, payload);
     if (!analisarValidacao(v).aceito) return NextResponse.json({ error: "o Mercado Livre não aceitou o anúncio", etapa: "validacao", status: v.status, resposta: v.body }, { status: 422 });
