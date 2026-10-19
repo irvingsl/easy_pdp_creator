@@ -205,7 +205,18 @@ async function tratar(request: NextRequest) {
         const { data: url } = await supabase.storage.from(BUCKET_ORIGINAIS).createSignedUrl(primeira.path_original, 300);
         return url?.signedUrl ? buscaLens(url.signedUrl) : null;
       })();
-      const [r, lens] = await Promise.all([pesquisaWeb(parcial.analysis, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null)), lensP]);
+      // as duas primeiras fotos originais acompanham a pergunta: o modelo vê o formato da peça ao escolher o que pesquisar
+      const imagens = await Promise.all(
+        [...produto.produto_fotos].sort((a, b) => a.ordem - b.ordem).slice(0, 2).map(async (f) => {
+          const { data, error } = await supabase.storage.from(BUCKET_ORIGINAIS).download(f.path_original);
+          if (error || !data) return null;
+          return { mime: "image/jpeg", data: Buffer.from(await data.arrayBuffer()).toString("base64") };
+        }),
+      );
+      const [r, lens] = await Promise.all([
+        pesquisaWeb(parcial.analysis, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null), undefined, imagens.filter((x): x is { mime: string; data: string } => !!x)),
+        lensP,
+      ]);
       const tentativas = [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
       if (!("texto" in r)) {
         return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: r.erro, etapas: [...(parcial.etapas ?? []), "pesquisa(falhou)"] });

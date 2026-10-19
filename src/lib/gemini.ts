@@ -129,7 +129,10 @@ o que é, com a maior precisão que as evidências permitirem, sem inventar.
 Passo 1 - Observar. Descreva o que vê: tipo de item, formato (unidade, kit, par, conjunto), componentes
 visíveis, material, estado (novo, usado, desgastado).
 Passo 2 - Ler. Transcreva literalmente todo texto, logotipo, número e código visível. Diga em qual foto está
-e se a leitura é boa, parcial ou ruim. Não corrija nem complete o que não estiver legível.
+e se a leitura é boa, parcial ou ruim. Não corrija nem complete o que não estiver legível. Compare as fotos que mostram
+a mesma gravação. Atenção às bordas: se um número parece começar ou terminar fora da área visível, ou tem um dígito
+ofuscado, marque a leitura como "parcial" e registre em "duvidas" as variações possíveis (por exemplo, dígito
+faltando no início ou no fim); não complete sozinho.
 Passo 3 - Classificar os códigos. Para cada código, decida se é: (a) número de peça ou modelo do fabricante,
 (b) código equivalente de outra marca, ou (c) código de processo (lote, data de fabricação, turno, material,
 inspeção). Códigos de processo costumam ser curtos, ter formato de data ou se repetir em padrões, e ficar em
@@ -403,10 +406,11 @@ export async function identifyPart(
 }
 
 /** Etapa de pesquisa (uma chamada): só a pergunta, com busca na web; tenta outros modelos se um falhar. */
-export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: DadosConfirmados | null, budget = BUDGET_MS) {
+export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: DadosConfirmados | null, budget = BUDGET_MS, imagens: { mime: string; data: string }[] = []) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Defina GEMINI_API_KEY");
-  const pergunta = perguntaDePesquisa(prev, conf);
+  const pergunta = perguntaDePesquisa(prev, conf) + (imagens.length ? " As fotos do item estão anexas: use o formato da peça e o que está gravado nela para decidir o que pesquisar." : "");
+  const comFotos = (t: string): Part[] => [{ text: t }, ...imagens.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } }))];
   const ordem = [...new Set([...RAPIDOS, model, ...(await candidateModels(key))])].slice(0, 4);
   let ultimo: { status: number; erro: string; pergunta: string } = { status: 0, erro: "", pergunta };
   const t0 = Date.now();
@@ -417,7 +421,7 @@ export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: Dado
 
   for (const m of ordem) {
     if (restante(t0, budget) < 8000) break;
-    const a = await callGemini(m, [{ text: pergunta }], true, 2048, Math.min(restante(t0, budget), 30000));
+    const a = await callGemini(m, comFotos(pergunta), true, 2048, Math.min(restante(t0, budget), 30000));
     if (!a.res.ok) {
       ultimo = { status: a.res.status, erro: `${m}: ${JSON.stringify(a.body?.error ?? a.body).slice(0, 200)}`, pergunta };
       continue;
@@ -436,7 +440,7 @@ export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: Dado
     const alt = perguntaAlternativa(prev, conf);
     for (const m of ["gemini-3.5-flash", "gemini-3.8-flash"]) {
       if (restante(t0, budget) < 12000) break;
-      const a = await callGemini(m, [{ text: alt }], true, 2048, Math.min(restante(t0, budget), 30000));
+      const a = await callGemini(m, comFotos(alt), true, 2048, Math.min(restante(t0, budget), 30000));
       if (!a.res.ok) continue;
       const ga = readGrounding(a.body, true);
       if (!ga.pesquisou) continue;
