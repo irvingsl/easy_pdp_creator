@@ -89,8 +89,8 @@ type Parcial = {
   etapas?: string[];
   /** por que a pesquisa na web não foi feita (reaproveitada de outro produto ou dispensada pelo catálogo) */
   pesquisaDispensada?: string;
-  /** faixa de preço (quartis) dos anúncios parecidos achados pela busca por imagem */
-  faixaPrecoLens?: { minimo: number; maximo: number; n: number };
+  /** anúncios parecidos achados pela busca por imagem (para extrair preço só dos que têm o mesmo código) */
+  lensMatches?: { titulo: string; fonte: string | null; preco: string | null }[];
 };
 
 /**
@@ -227,9 +227,6 @@ async function tratar(request: NextRequest) {
         }
       }
       const lensBasta = (lens?.matches.length ?? 0) >= 3;
-      // preços dos anúncios parecidos: do 1º ao 3º quartil (ignora os extremos)
-      const precos = precosDosMatches(lens?.matches ?? []).sort((x, y) => x - y);
-      const faixaPrecoLens = precos.length >= 3 ? { minimo: precos[Math.floor((precos.length - 1) * 0.25)], maximo: precos[Math.ceil((precos.length - 1) * 0.75)], n: precos.length } : undefined;
 
       // 2) Pesquisa na web (grounding) só como reserva: sem chave do Lens ou quando a busca por imagem não bastou
       type Reserva = Awaited<ReturnType<typeof pesquisaWeb>>;
@@ -275,7 +272,7 @@ async function tratar(request: NextRequest) {
         model: r.model,
         perguntaPesquisa: r.pergunta,
         tentativas,
-        faixaPrecoLens,
+        lensMatches: lens?.matches,
         etapas: [...(parcial.etapas ?? []), lensBasta ? "lens(sem grounding)" : lens ? (lens.erro ? "pesquisa+lens(erro)" : "pesquisa+lens(pouco)") : "pesquisa"],
         ...(lens?.erro ? { erroPesquisa: `Busca por imagem: ${lens.erro}` } : {}),
       };
@@ -307,15 +304,26 @@ async function tratar(request: NextRequest) {
       }
     }
     const a = p.analysis;
-    if (!a.preco?.minimo && p.faixaPrecoLens) {
-      a.preco = {
-        minimo: p.faixaPrecoLens.minimo,
-        maximo: p.faixaPrecoLens.maximo,
-        formato_de_referencia: "unidade",
-        condicao: null,
-        fontes: [`Busca por imagem do Google: ${p.faixaPrecoLens.n} anúncios parecidos (podem ser de peças diferentes)`],
-        observacao: "Faixa entre o 1º e o 3º quartil dos preços de anúncios com fotos parecidas.",
-      };
+    // Preço de referência só de anúncios cujo título traz o MESMO código (o do vendedor, o lido ou um candidato)
+    if (!a.preco?.minimo && p.lensMatches?.length) {
+      const codigos = [
+        alnumN(produto.oem_code),
+        alnumN((produto.dados_confirmados as DadosConfirmados | null)?.numero_peca),
+        alnumN(a.numero_peca_principal),
+        ...(a.candidatos ?? []).map((c) => alnumN(c.numero_de_peca)),
+      ].filter((c) => c.length >= 4);
+      const mesmos = p.lensMatches.filter((m) => codigos.some((c) => alnumN(m.titulo).includes(c)));
+      const precos = precosDosMatches(mesmos).sort((x, y) => x - y);
+      if (precos.length >= 2) {
+        a.preco = {
+          minimo: precos[0],
+          maximo: precos[precos.length - 1],
+          formato_de_referencia: "unidade",
+          condicao: null,
+          fontes: [`${precos.length} anúncio(s) com o mesmo código, achados pela busca por imagem do Google`],
+          observacao: "Só anúncios cujo título traz o mesmo código; confira posição e estado antes de usar como referência.",
+        };
+      }
     }
     // Dado vindo só da pesquisa e sem link da fonte não é verificável: não pode constar como confiança alta
     a.codigos = (a.codigos ?? []).map((c) => (c.origem === "inferido_pela_pesquisa" && !c.fonte_url && c.confianca === "alta" ? { ...c, confianca: "baixa" } : c));
