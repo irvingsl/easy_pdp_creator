@@ -151,6 +151,14 @@ async function tratar(request: NextRequest) {
       if (!gem.analysis) {
         return NextResponse.json({ error: "A IA não devolveu um JSON válido", raw: gem.text, sources: gem.sources }, { status: 502 });
       }
+      // Leitura curta (até 3 caracteres) pode ser um número cortado ("761" no lugar de "3761"): não vira número principal
+      const an = gem.analysis;
+      if (an.numero_peca_principal && alnumN(an.numero_peca_principal).length <= 3 && (cego || !((produto.dados_confirmados as DadosConfirmados | null)?.numero_peca || produto.oem_code))) {
+        const lido = an.numero_peca_principal;
+        an.numero_peca_principal = null;
+        an.codigos = (an.codigos ?? []).map((c) => (alnumN(c.codigo) === alnumN(lido) ? { ...c, confianca: "baixa" as const } : c));
+        an.duvidas = [`Li "${lido}" gravado, mas é um número curto e pode estar cortado ou incompleto (falta algum dígito?). Confirme no item e informe em "Dados confirmados".`, ...(an.duvidas ?? [])];
+      }
       const out: Parcial = {
         analysis: gem.analysis, narrativa: gem.narrativa, sources: gem.sources, consultas: gem.consultas,
         pesquisou: gem.pesquisou, model: gem.model, grounded: gem.grounded, tentativas: gem.tentativas, visao, etapas: ["fotos"],
