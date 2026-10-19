@@ -58,3 +58,10 @@ export async function lookupPartNumber(token: string, code: string): Promise<Cat
   }
   return { ...(ultimo as CatalogHit), code, variantes: variantes(code) };
 }
+
+/** Produtos do catálogo do ML para uma busca por palavras (ajuda com códigos curtos, que não se acham por número de peça). */
+export async function buscarPorPalavras(token: string, q: string) {
+  const r = await mlGet(`/products/search?site_id=MLB&q=${encodeURIComponent(q)}&limit=6`, token);
+  const b = r.body as { results?: Prod[] } | null;
+  return (b?.results ?? []).map((p) => ({ id: p.id, name: p.name, brand: attr(p, "BRAND"), partNumber: attr(p, "PART_NUMBER") }));
+}

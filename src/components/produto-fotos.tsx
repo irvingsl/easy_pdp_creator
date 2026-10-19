@@ -137,7 +137,24 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {fotos.map((f, i) => (
+        {fotos.map((f, i) =>
+          f.status === "pendente" ? (
+            // Enquanto o fundo não foi removido, só o original (sem comparação nem botões)
+            <li key={f.id} className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+              <div className="text-sm font-medium">
+                Foto {i + 1} · <span className="font-normal text-gray-500">{STATUS_LABEL.pendente}</span>
+              </div>
+              <div className="relative">
+                {f.originalUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={f.originalUrl} alt={`Original ${i + 1}`} className="aspect-square w-full rounded border border-gray-100 object-cover opacity-80 dark:border-gray-800" />
+                ) : (
+                  <div className="aspect-square w-full rounded bg-gray-100 dark:bg-gray-900" />
+                )}
+                <span className="absolute inset-x-2 bottom-2 rounded bg-black/70 px-2 py-1 text-center text-xs text-white">Removendo o fundo…</span>
+              </div>
+            </li>
+          ) : (
           <li key={f.id} className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
             <div className="text-sm font-medium">
               Foto {i + 1} · <span className="font-normal text-gray-500">{STATUS_LABEL[f.status]}</span>
@@ -223,7 +240,8 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
               </button>
             </div>
           </li>
-        ))}
+          ),
+        )}
       </ul>
 
       {zoom && (

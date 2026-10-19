@@ -300,6 +300,13 @@ function readGrounding(body: { candidates?: { content?: { parts?: { text?: strin
 }
 
 /** Pergunta direta (formato que faz o Gemini pesquisar), montada só com fatos sólidos. */
+/** 2ª tentativa quando a primeira não achou: foca em anúncios e catálogos, onde esses códigos costumam aparecer. */
+export function perguntaAlternativa(prev: PartAnalysis, conf: DadosConfirmados | null | undefined): string {
+  const num = conf?.numero_peca || prev.numero_peca_principal;
+  const marca = conf?.marca || prev.marca?.valor;
+  return `Procure em lojas e catálogos de autopeças brasileiros (Mercado Livre, catálogo do fabricante, distribuidores) anúncios do ${prev.tipo_item ?? "item"}${marca ? ` ${marca}` : ""}${num ? ` código ${num}` : ""}. Para o que encontrar, informe o nome completo do produto, os veículos (modelo, motor, ano e posição) em que é aplicado e códigos equivalentes. Se nada confirmar o código, diga isso claramente. Responda em no máximo 12 linhas e cite as fontes.`;
+}
+
 export function perguntaDePesquisa(prev: PartAnalysis, conf: DadosConfirmados | null | undefined): string {
   const fmt = (c: { nome: string; valor: string; unidade?: string | null }) => `${c.nome} ${c.valor}${c.unidade ? ` ${c.unidade}` : ""}`;
   const doVendedor = (conf?.caracteristicas ?? []).map(fmt);
@@ -328,7 +335,9 @@ export function perguntaDePesquisa(prev: PartAnalysis, conf: DadosConfirmados | 
     (prev.codigos ?? []).find((c) => c.classe === "numero_de_peca" && c.origem === "gravado_no_item")?.codigo;
   if (numeroLido) {
     const formato = prev.formato_de_venda && prev.formato_de_venda !== "indefinido" ? prev.formato_de_venda : "o mesmo formato do item";
-    return `Pesquise na web o número de peça ${numeroLido}${marca ? ` da marca ${marca}` : ""}. Confirme que tipo de item é, as medidas e características, os códigos equivalentes de outras marcas, as aplicações (veículos e anos) e a faixa de preço (${formato}).${fatos ? ` O item que tenho tem: ${fatos}; diga se combina.` : ""} Responda em no máximo 12 linhas e cite as fontes.`;
+    // com o tipo da peça na pergunta, números curtos ("761") deixam de ser ambíguos
+    const alvo = prev.tipo_item ? `o ${prev.tipo_item}` : "o número de peça";
+    return `Pesquise na web ${alvo}${marca ? ` da marca ${marca}` : ""}, código ${numeroLido}. Confirme que tipo de item é, as medidas e características, os códigos equivalentes de outras marcas, as aplicações (veículos e anos) e a faixa de preço (${formato}).${fatos ? ` O item que tenho tem: ${fatos}; diga se combina.` : ""} Responda em no máximo 12 linhas e cite as fontes.`;
   }
   return `Pesquise na web: quais números de peça do fabricante correspondem a ${item}${fatos ? `, com estas características: ${fatos}` : ""}? Vários modelos podem ter as mesmas medidas, então liste os possíveis; para cada um, informe os códigos equivalentes de outras marcas, as aplicações (veículos e anos) e a faixa de preço do mesmo formato. Responda em no máximo 12 linhas e cite as fontes.`;
 }
@@ -401,6 +410,10 @@ export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: Dado
   const ordem = [...new Set([...RAPIDOS, model, ...(await candidateModels(key))])].slice(0, 4);
   let ultimo: { status: number; erro: string; pergunta: string } = { status: 0, erro: "", pergunta };
   const t0 = Date.now();
+  const inconclusivo = (t: string) => /n[ãa]o (foi poss[ií]vel|consegui|encontr|localiz|h[áa] (registro|resultado))|sem resultados?|nenhum (resultado|registro)/i.test(t);
+
+  type Achado = { status: number; model: string; pergunta: string; texto: string; sources: { title: string; uri: string }[]; consultas: string[]; pesquisou: true };
+  let achado: Achado | null = null;
 
   for (const m of ordem) {
     if (restante(t0, budget) < 8000) break;
@@ -414,9 +427,35 @@ export async function pesquisaWeb(prev: PartAnalysis, model: string, conf?: Dado
       ultimo = { status: a.res.status, erro: `${m}: respondeu sem pesquisar`, pergunta };
       continue;
     }
-    return { status: a.res.status, model: m, pergunta, texto: ga.text.trim(), sources: ga.sources, consultas: ga.consultas, pesquisou: true as const };
+    achado = { status: a.res.status, model: m, pergunta, texto: ga.text.trim(), sources: ga.sources, consultas: ga.consultas, pesquisou: true as const };
+    break;
   }
-  return ultimo;
+
+  // Resposta do tipo "não encontrei": uma 2ª tentativa com modelo mais forte e outra pergunta, se sobrar tempo
+  if (achado && inconclusivo(achado.texto) && restante(t0, budget) > 20000) {
+    const alt = perguntaAlternativa(prev, conf);
+    for (const m of ["gemini-3.5-flash", "gemini-3.8-flash"]) {
+      if (restante(t0, budget) < 12000) break;
+      const a = await callGemini(m, [{ text: alt }], true, 2048, Math.min(restante(t0, budget), 30000));
+      if (!a.res.ok) continue;
+      const ga = readGrounding(a.body, true);
+      if (!ga.pesquisou) continue;
+      const texto = ga.text.trim();
+      if (!inconclusivo(texto)) {
+        achado = {
+          status: a.res.status,
+          model: m,
+          pergunta: `${achado.pergunta}\n\n(2ª tentativa) ${alt}`,
+          texto: `${achado.texto}\n\n— 2ª pesquisa (anúncios e catálogos) —\n${texto}`,
+          sources: [...achado.sources, ...ga.sources],
+          consultas: [...achado.consultas, ...ga.consultas],
+          pesquisou: true as const,
+        };
+      }
+      break;
+    }
+  }
+  return achado ?? ultimo;
 }
 
 /** Etapa de organização (outra chamada, sem busca): transforma o texto da pesquisa no formato do app. */

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { identifyPart, organizarPesquisa, pesquisaWeb, type PartAnalysis } from "@/lib/gemini";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
-import { lookupPartNumber, type CatalogHit } from "@/marketplaces/mercadolivre/catalog";
+import { buscarPorPalavras, lookupPartNumber, type CatalogHit } from "@/marketplaces/mercadolivre/catalog";
 import { BUCKET_ORIGINAIS } from "@/domain/types";
 import { notasParaIA, type DadosConfirmados } from "@/domain/dados-confirmados";
 import { gravarUso, usoStore } from "@/lib/uso";
@@ -202,15 +202,29 @@ async function tratar(request: NextRequest) {
       if (!("texto" in r)) {
         return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: r.erro, etapas: [...(parcial.etapas ?? []), "pesquisa(falhou)"] });
       }
+      // Produtos parecidos no catálogo do ML (gratuito): nomes com veículo e código ajudam quando a web não achou
+      let textoFinal = r.texto;
+      try {
+        const token = await getAccessToken(supabase);
+        const an = parcial.analysis;
+        const marca = (cego ? null : (produto.dados_confirmados as DadosConfirmados | null)?.marca) || an.marca?.valor;
+        const codigo = an.numero_peca_principal;
+        if (token && codigo) {
+          const achados = await buscarPorPalavras(token, [an.tipo_item?.split(" ")[0], marca, codigo].filter(Boolean).join(" "));
+          if (achados.length) textoFinal += `\n\nProdutos do catálogo do Mercado Livre para esta busca:\n${achados.map((x) => `- ${x.name}${x.brand ? ` (marca ${x.brand})` : ""}${x.partNumber ? ` [código ${x.partNumber}]` : ""}`).join("\n")}`;
+        }
+      } catch {
+        /* o catálogo é um complemento: se falhar, segue só com a web */
+      }
       const out: Parcial = {
         ...parcial,
-        narrativa: [parcial.narrativa, `— Pesquisa na web —\n${r.texto}`].filter(Boolean).join("\n\n"),
+        textoPesquisa: textoFinal,
+        narrativa: [parcial.narrativa, `— Pesquisa na web —\n${textoFinal}`].filter(Boolean).join("\n\n"),
         sources: r.sources,
         consultas: r.consultas,
         pesquisou: true,
         model: r.model,
         perguntaPesquisa: r.pergunta,
-        textoPesquisa: r.texto,
         tentativas,
         etapas: [...(parcial.etapas ?? []), "pesquisa"],
       };

@@ -182,7 +182,9 @@ export function NovoProdutoForm() {
 
       <button disabled={busy || !files.length} className={btnPrimary}>
         {busy
-          ? `Foto ${progress!.done + 1} de ${progress!.total}: ${progress!.step}...`
+          ? progress!.step === "Enviando fotos"
+            ? `Enviando fotos: ${progress!.done} de ${progress!.total}...`
+            : `Foto ${Math.min(progress!.done + 1, progress!.total)} de ${progress!.total}: ${progress!.step}...`
           : files.length
             ? `Seguir com ${files.length} foto${files.length > 1 ? "s" : ""}`
             : "Escolha ao menos uma foto"}
