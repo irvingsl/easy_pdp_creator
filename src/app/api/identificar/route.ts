@@ -6,6 +6,7 @@ import { buscarPorPalavras, lookupPartNumber, type CatalogHit } from "@/marketpl
 import { BUCKET_ORIGINAIS } from "@/domain/types";
 import { notasParaIA, type DadosConfirmados } from "@/domain/dados-confirmados";
 import { gravarUso, usoStore } from "@/lib/uso";
+import { buscaLens, textoLens } from "@/lib/lens";
 import { buscaPorImagem, evidenciasParaIA, type VisaoResult } from "@/lib/vision";
 
 export const maxDuration = 60;
@@ -197,7 +198,14 @@ async function tratar(request: NextRequest) {
           }
         }
       }
-      const r = await pesquisaWeb(parcial.analysis, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null));
+      // Busca por imagem (se houver chave) roda junto com a pesquisa por texto, sem somar tempo
+      const primeira = [...produto.produto_fotos].sort((a, b) => a.ordem - b.ordem)[0];
+      const lensP = (async () => {
+        if (!primeira || !process.env.SERPAPI_KEY) return null;
+        const { data: url } = await supabase.storage.from(BUCKET_ORIGINAIS).createSignedUrl(primeira.path_original, 300);
+        return url?.signedUrl ? buscaLens(url.signedUrl) : null;
+      })();
+      const [r, lens] = await Promise.all([pesquisaWeb(parcial.analysis, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null)), lensP]);
       const tentativas = [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
       if (!("texto" in r)) {
         return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: r.erro, etapas: [...(parcial.etapas ?? []), "pesquisa(falhou)"] });
@@ -216,6 +224,7 @@ async function tratar(request: NextRequest) {
       } catch {
         /* o catálogo é um complemento: se falhar, segue só com a web */
       }
+      if (lens?.matches.length) textoFinal += `\n\n${textoLens(lens.matches)}`;
       const out: Parcial = {
         ...parcial,
         textoPesquisa: textoFinal,
@@ -226,7 +235,8 @@ async function tratar(request: NextRequest) {
         model: r.model,
         perguntaPesquisa: r.pergunta,
         tentativas,
-        etapas: [...(parcial.etapas ?? []), "pesquisa"],
+        etapas: [...(parcial.etapas ?? []), lens ? (lens.erro ? "pesquisa+lens(erro)" : "pesquisa+lens") : "pesquisa"],
+        ...(lens?.erro ? { erroPesquisa: `Busca por imagem: ${lens.erro}` } : {}),
       };
       return NextResponse.json(out);
     }
