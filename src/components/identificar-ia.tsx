@@ -50,7 +50,7 @@ const ORIGEM: Record<string, string> = {
 
 const money = (n: number | null) => (n == null ? "?" : `R$ ${n.toLocaleString("pt-BR")}`);
 
-export function IdentificarIA({ produtoId, inicial, autoStart = false }: { produtoId: string; inicial: Identificacao | null; autoStart?: boolean }) {
+export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicial = null }: { produtoId: string; inicial: Identificacao | null; autoStart?: boolean; oemInicial?: string | null }) {
   const router = useRouter();
   const [res, setRes] = useState<Identificacao | null>(inicial);
   const [busy, setBusy] = useState(false);
@@ -124,8 +124,20 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false }: { produ
     router.refresh();
   }
 
-  async function usarComoOem(code: string) {
-    await createClient().from("produtos").update({ oem_code: code }).eq("id", produtoId);
+  // número de peça que o vendedor já confirmou (vem do cadastro; muda na hora ao tocar em "É este")
+  const [confirmado, setConfirmado] = useState<string | null>(oemInicial);
+  const mesmoCodigo = (a?: string | null, b?: string | null) => !!a && !!b && a.replace(/[^0-9a-z]/gi, "").toLowerCase() === b.replace(/[^0-9a-z]/gi, "").toLowerCase();
+
+  async function usarComoOem(code: string, marca?: string | null) {
+    const supabase = createClient();
+    const { data } = await supabase.from("produtos").select("dados_confirmados").eq("id", produtoId).maybeSingle();
+    const atual = (data?.dados_confirmados ?? {}) as { marca?: string; numero_peca?: string };
+    const { error } = await supabase
+      .from("produtos")
+      .update({ oem_code: code, dados_confirmados: { ...atual, numero_peca: code, ...(marca && !atual.marca ? { marca } : {}) } })
+      .eq("id", produtoId);
+    if (error) return setError(error.message);
+    setConfirmado(code);
     router.refresh();
   }
 
@@ -251,6 +263,7 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false }: { produ
             <div>
               <h3 className="font-medium">Candidatos a número de peça</h3>
               <p className="text-xs text-gray-500">Inferidos pela pesquisa; mais de um modelo pode ter as mesmas medidas. Confirme com o item na mão.</p>
+              {confirmado && <p className="text-xs text-green-700 dark:text-green-400">Número {confirmado} confirmado e salvo em &quot;Dados confirmados&quot;. Para pesquisar de novo a partir dele, use &quot;Identificar de novo&quot;; para seguir, gere o rascunho.</p>}
               <ul className="mt-2 flex flex-col gap-3">
                 {a.candidatos.map((c) => {
                   const noCatalogo = res.catalog.find((k) => k.relevante && k.code.replace(/[^0-9a-z]/gi, "").toLowerCase() === c.numero_de_peca.replace(/[^0-9a-z]/gi, "").toLowerCase());
@@ -260,9 +273,13 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false }: { produ
                         <span className="font-mono font-medium">{c.numero_de_peca}</span>
                         {c.marca && <span className="text-gray-500">· {c.marca}</span>}
                         {noCatalogo && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-300">existe no catálogo do ML</span>}
-                        <button onClick={() => usarComoOem(c.numero_de_peca)} className="ml-auto rounded-md border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">
-                          É este
-                        </button>
+                        {mesmoCodigo(confirmado, c.numero_de_peca) ? (
+                          <span className="ml-auto rounded-md bg-green-100 px-2 py-0.5 text-xs text-green-800 dark:bg-green-950 dark:text-green-300">✓ Confirmado por você</span>
+                        ) : (
+                          <button onClick={() => usarComoOem(c.numero_de_peca, c.marca)} className="ml-auto rounded-md border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">
+                            É este
+                          </button>
+                        )}
                       </div>
                       <p className="text-gray-700 dark:text-gray-300">{c.descricao}</p>
                       {c.aplicacoes?.length > 0 && <p className="text-gray-500">Aplicações: {c.aplicacoes.join("; ")}</p>}

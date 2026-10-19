@@ -128,7 +128,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
       </Etapa>
 
       <Etapa n={2} titulo="Identificação com IA" resumo={produto.identificacao ? "feita" : "pendente"} aberto={proxima === "identificacao" || (auto && !produto.identificacao)}>
-        <IdentificarIA produtoId={produto.id} inicial={(produto.identificacao as Identificacao | null) ?? null} autoStart={auto} />
+        <IdentificarIA produtoId={produto.id} inicial={(produto.identificacao as Identificacao | null) ?? null} autoStart={auto} oemInicial={produto.oem_code} />
       </Etapa>
 
       <Etapa n={3} titulo="Rascunho do anúncio" resumo={rascunho?.titulo || "pendente"} aberto={proxima === "rascunho" || (auto && !rascunho)}>
