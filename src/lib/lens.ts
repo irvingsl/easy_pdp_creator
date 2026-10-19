@@ -57,3 +57,10 @@ export const textoLens = (matches: LensMatch[], overview?: string) =>
         .map((m) => `- ${m.titulo}${m.fonte ? ` (${m.fonte})` : ""}${m.preco ? ` ${m.preco}` : ""}`)
         .join("\n")}`
     : "";
+
+/** Números dos preços que o Lens traz ("R$ 1.234,56*" vira 1234.56); ignora os que não dá para ler. */
+export function precosDosMatches(matches: LensMatch[]): number[] {
+  return matches
+    .map((m) => (m.preco ? Number(m.preco.replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".")) : NaN))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}

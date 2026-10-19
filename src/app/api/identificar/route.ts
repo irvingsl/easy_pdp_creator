@@ -6,7 +6,7 @@ import { buscarPorPalavras, lookupPartNumber, modeloDoCatalogo, type CatalogHit,
 import { BUCKET_ORIGINAIS } from "@/domain/types";
 import { notasParaIA, type DadosConfirmados } from "@/domain/dados-confirmados";
 import { gravarUso, usoStore } from "@/lib/uso";
-import { buscaLens, textoLens } from "@/lib/lens";
+import { buscaLens, precosDosMatches, textoLens } from "@/lib/lens";
 import { buscaPorImagem, evidenciasParaIA, type VisaoResult } from "@/lib/vision";
 
 export const maxDuration = 60;
@@ -53,7 +53,7 @@ function mesclarPesquisa(atual: PartAnalysis, antigo: PartAnalysis): PartAnalysi
   };
 }
 
-const significant = (code: string) => code.replace(/[^0-9a-z]/gi, "").length >= 6;
+const significant = (code: string) => code.replace(/[^0-9a-z]/gi, "").length >= 4;
 
 /**
  * Existir no catálogo do ML só prova que o número EXISTE, não que é o do item. A certeza só sobe quando o
@@ -89,6 +89,8 @@ type Parcial = {
   etapas?: string[];
   /** por que a pesquisa na web não foi feita (reaproveitada de outro produto ou dispensada pelo catálogo) */
   pesquisaDispensada?: string;
+  /** faixa de preço (quartis) dos anúncios parecidos achados pela busca por imagem */
+  faixaPrecoLens?: { minimo: number; maximo: number; n: number };
 };
 
 /**
@@ -189,7 +191,8 @@ async function tratar(request: NextRequest) {
         if (token && code) {
           const hit = await lookupPartNumber(token, code);
           const kw = keyword(parcial.analysis.tipo_item);
-          if (hit.exact && (!kw || hit.products.some((x) => norm(x.name).includes(kw)))) {
+          const mesmaMarca = (b: string) => { const m = norm(parcial.analysis.marca?.valor ?? ""); const n = norm(b); return !m || !n || n.includes(m) || m.includes(n); };
+          if (hit.exact && hit.products.some((x) => mesmaMarca(x.brand)) && (!kw || hit.products.some((x) => norm(x.name).includes(kw)))) {
             const diam = hit.products.map((x) => x.diameter).find(Boolean);
             const caract = [...(parcial.analysis.caracteristicas ?? [])];
             if (diam && !caract.some((c) => /di[aâ]metro/i.test(c.nome))) {
@@ -224,6 +227,9 @@ async function tratar(request: NextRequest) {
         }
       }
       const lensBasta = (lens?.matches.length ?? 0) >= 3;
+      // preços dos anúncios parecidos: do 1º ao 3º quartil (ignora os extremos)
+      const precos = precosDosMatches(lens?.matches ?? []).sort((x, y) => x - y);
+      const faixaPrecoLens = precos.length >= 3 ? { minimo: precos[Math.floor((precos.length - 1) * 0.25)], maximo: precos[Math.ceil((precos.length - 1) * 0.75)], n: precos.length } : undefined;
 
       // 2) Pesquisa na web (grounding) só como reserva: sem chave do Lens ou quando a busca por imagem não bastou
       type Reserva = Awaited<ReturnType<typeof pesquisaWeb>>;
@@ -269,6 +275,7 @@ async function tratar(request: NextRequest) {
         model: r.model,
         perguntaPesquisa: r.pergunta,
         tentativas,
+        faixaPrecoLens,
         etapas: [...(parcial.etapas ?? []), lensBasta ? "lens(sem grounding)" : lens ? (lens.erro ? "pesquisa+lens(erro)" : "pesquisa+lens(pouco)") : "pesquisa"],
         ...(lens?.erro ? { erroPesquisa: `Busca por imagem: ${lens.erro}` } : {}),
       };
@@ -300,6 +307,16 @@ async function tratar(request: NextRequest) {
       }
     }
     const a = p.analysis;
+    if (!a.preco?.minimo && p.faixaPrecoLens) {
+      a.preco = {
+        minimo: p.faixaPrecoLens.minimo,
+        maximo: p.faixaPrecoLens.maximo,
+        formato_de_referencia: "unidade",
+        condicao: null,
+        fontes: [`Busca por imagem do Google: ${p.faixaPrecoLens.n} anúncios parecidos (podem ser de peças diferentes)`],
+        observacao: "Faixa entre o 1º e o 3º quartil dos preços de anúncios com fotos parecidas.",
+      };
+    }
     // Dado vindo só da pesquisa e sem link da fonte não é verificável: não pode constar como confiança alta
     a.codigos = (a.codigos ?? []).map((c) => (c.origem === "inferido_pela_pesquisa" && !c.fonte_url && c.confianca === "alta" ? { ...c, confianca: "baixa" } : c));
     a.caracteristicas = (a.caracteristicas ?? []).map((c) => (c.origem === "fonte_web" && c.confianca === "alta" ? { ...c, confianca: "media" } : c));
