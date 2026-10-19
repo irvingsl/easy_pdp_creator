@@ -22,7 +22,9 @@ export function CopyBlock({ text, label = "Copiar" }: { text: string; label?: st
   }
 
   return (
-    <div className="relative">
+    <details className="text-xs text-gray-500">
+      <summary className="cursor-pointer">Detalhes técnicos (debug)</summary>
+      <div className="relative mt-2">
       <button
         type="button"
         onClick={copy}
@@ -31,6 +33,7 @@ export function CopyBlock({ text, label = "Copiar" }: { text: string; label?: st
         {copied ? "Copiado ✓" : label}
       </button>
       <pre className="max-h-96 overflow-auto rounded-lg bg-gray-100 p-3 pr-20 text-xs dark:bg-gray-900">{text}</pre>
-    </div>
+      </div>
+    </details>
   );
 }

@@ -189,9 +189,6 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicia
               )}
             </p>
           )}
-          {res.buscaWeb && res.consultas && res.consultas.length > 0 && (
-            <p className="text-xs text-gray-500">Pesquisas feitas: {res.consultas.join(" · ")}</p>
-          )}
           <div className="flex flex-col gap-1">
             <span className={`self-start rounded-full px-3 py-1 text-xs font-medium ${BADGE[res.certeza.level]}`}>
               Certeza {res.certeza.level}
@@ -226,38 +223,6 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicia
 
           {res.cego && <p className="text-xs text-gray-500">Identificação feita às cegas (sem os dados confirmados).</p>}
 
-          {res.visao && (
-            <details>
-              <summary className="cursor-pointer font-medium">
-                Busca por imagem do Google ({res.visao.erro ? "erro" : `${res.visao.paginas.length} páginas`})
-              </summary>
-              {res.visao.erro && <p className="mt-1 break-words text-red-600">{res.visao.erro}</p>}
-              {res.visao.palpites.length > 0 && <p className="mt-1">Melhor palpite: {res.visao.palpites.join("; ")}</p>}
-              {res.visao.entidades.length > 0 && <p className="text-gray-500">Entidades: {res.visao.entidades.map((e) => e.descricao).join(" · ")}</p>}
-              <ul className="mt-1 list-disc pl-5">
-                {res.visao.paginas.map((p) => (
-                  <li key={p.url}>
-                    <a href={p.url} target="_blank" rel="noreferrer" className="underline">{p.titulo || p.url}</a>
-                    {p.fotos > 1 ? <span className="text-gray-500"> (casou com {p.fotos} fotos)</span> : null}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-
-          {res.perguntaPesquisa && (
-            <details>
-              <summary className="cursor-pointer font-medium">Pergunta enviada à pesquisa</summary>
-              <p className="mt-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">{res.perguntaPesquisa}</p>
-            </details>
-          )}
-
-          {res.narrativa && (
-            <details open>
-              <summary className="cursor-pointer font-medium">Raciocínio da IA</summary>
-              <p className="mt-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">{res.narrativa}</p>
-            </details>
-          )}
 
           {a.candidatos && a.candidatos.length > 0 && (
             <div>
@@ -293,34 +258,6 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicia
             </div>
           )}
 
-          {a.textos_gravados?.length > 0 && (
-            <div>
-              <h3 className="font-medium">Lido no item</h3>
-              <ul className="list-disc pl-5">
-                {a.textos_gravados.map((t, i) => (
-                  <li key={i}>
-                    <span className="font-mono">{t.texto}</span>{" "}
-                    <span className="text-gray-500">(foto {t.foto ?? "?"}, leitura {t.legibilidade})</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {a.codigos?.length > 0 && (
-            <div>
-              <h3 className="font-medium">Códigos</h3>
-              <ul className="list-disc pl-5">
-                {a.codigos.map((c, i) => (
-                  <li key={i}>
-                    <span className="font-mono">{c.codigo}</span> · {CLASSE[c.classe] ?? c.classe}
-                    {c.marca ? ` · ${c.marca}` : ""} · confiança {c.confianca}
-                    {c.fonte_url && <> · <a href={c.fonte_url} target="_blank" rel="noreferrer" className="underline">fonte</a></>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           {a.caracteristicas?.length > 0 && (
             <div>
@@ -356,23 +293,6 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicia
             </div>
           )}
 
-          {res.catalog.length > 0 && (
-            <div>
-              <h3 className="font-medium">Conferência no catálogo do Mercado Livre</h3>
-              <ul className="flex flex-col gap-1">
-                {res.catalog.map((c) => (
-                  <li key={c.code}>
-                    <span className="font-mono">{c.code}</span>{" "}
-                    {c.ignorado
-                      ? <span className="text-gray-500">→ {c.ignorado}</span>
-                      : c.exact
-                      ? <>→ <strong>reconhecido</strong>: {c.products.map((p) => `${p.name} (${p.brand}${p.diameter ? `, ${p.diameter}` : ""}, ${p.status})`).join("; ")}</>
-                      : <span className="text-gray-500">→ não reconhecido como número de peça</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           {(a.preco?.minimo != null || a.preco?.maximo != null) && (
             <p>
@@ -390,8 +310,6 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicia
               <ul className="list-disc pl-5 text-gray-600 dark:text-gray-400">{a.fotos_sugeridas.map((f) => <li key={f}>{f}</li>)}</ul>
             </div>
           )}
-          {a.termos_busca?.length > 0 && <p className="text-gray-500">Termos de busca: {a.termos_busca.join(" · ")}</p>}
-          {a.categoria_sugerida_texto && <p className="text-gray-500">Categoria sugerida: {a.categoria_sugerida_texto}</p>}
           {a.duvidas?.length > 0 && (
             <div>
               <h3 className="font-medium">Dúvidas da IA</h3>
@@ -399,6 +317,91 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicia
             </div>
           )}
 
+          <details className="rounded-lg border border-gray-200 p-3 text-xs dark:border-gray-800">
+            <summary className="cursor-pointer text-gray-500">Detalhes técnicos (debug)</summary>
+            <div className="mt-3 flex flex-col gap-4 text-sm">
+          {res.buscaWeb && res.consultas && res.consultas.length > 0 && (
+            <p className="text-xs text-gray-500">Pesquisas feitas: {res.consultas.join(" · ")}</p>
+          )}
+          {res.visao && (
+            <details>
+              <summary className="cursor-pointer font-medium">
+                Busca por imagem do Google ({res.visao.erro ? "erro" : `${res.visao.paginas.length} páginas`})
+              </summary>
+              {res.visao.erro && <p className="mt-1 break-words text-red-600">{res.visao.erro}</p>}
+              {res.visao.palpites.length > 0 && <p className="mt-1">Melhor palpite: {res.visao.palpites.join("; ")}</p>}
+              {res.visao.entidades.length > 0 && <p className="text-gray-500">Entidades: {res.visao.entidades.map((e) => e.descricao).join(" · ")}</p>}
+              <ul className="mt-1 list-disc pl-5">
+                {res.visao.paginas.map((p) => (
+                  <li key={p.url}>
+                    <a href={p.url} target="_blank" rel="noreferrer" className="underline">{p.titulo || p.url}</a>
+                    {p.fotos > 1 ? <span className="text-gray-500"> (casou com {p.fotos} fotos)</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          {res.perguntaPesquisa && (
+            <details>
+              <summary className="cursor-pointer font-medium">Pergunta enviada à pesquisa</summary>
+              <p className="mt-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">{res.perguntaPesquisa}</p>
+            </details>
+          )}
+
+          {res.narrativa && (
+            <details>
+              <summary className="cursor-pointer font-medium">Raciocínio da IA</summary>
+              <p className="mt-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">{res.narrativa}</p>
+            </details>
+          )}
+          {a.textos_gravados?.length > 0 && (
+            <div>
+              <h3 className="font-medium">Lido no item</h3>
+              <ul className="list-disc pl-5">
+                {a.textos_gravados.map((t, i) => (
+                  <li key={i}>
+                    <span className="font-mono">{t.texto}</span>{" "}
+                    <span className="text-gray-500">(foto {t.foto ?? "?"}, leitura {t.legibilidade})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {a.codigos?.length > 0 && (
+            <div>
+              <h3 className="font-medium">Códigos</h3>
+              <ul className="list-disc pl-5">
+                {a.codigos.map((c, i) => (
+                  <li key={i}>
+                    <span className="font-mono">{c.codigo}</span> · {CLASSE[c.classe] ?? c.classe}
+                    {c.marca ? ` · ${c.marca}` : ""} · confiança {c.confianca}
+                    {c.fonte_url && <> · <a href={c.fonte_url} target="_blank" rel="noreferrer" className="underline">fonte</a></>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {res.catalog.length > 0 && (
+            <div>
+              <h3 className="font-medium">Conferência no catálogo do Mercado Livre</h3>
+              <ul className="flex flex-col gap-1">
+                {res.catalog.map((c) => (
+                  <li key={c.code}>
+                    <span className="font-mono">{c.code}</span>{" "}
+                    {c.ignorado
+                      ? <span className="text-gray-500">→ {c.ignorado}</span>
+                      : c.exact
+                      ? <>→ <strong>reconhecido</strong>: {c.products.map((p) => `${p.name} (${p.brand}${p.diameter ? `, ${p.diameter}` : ""}, ${p.status})`).join("; ")}</>
+                      : <span className="text-gray-500">→ não reconhecido como número de peça</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {a.termos_busca?.length > 0 && <p className="text-gray-500">Termos de busca: {a.termos_busca.join(" · ")}</p>}
+          {a.categoria_sugerida_texto && <p className="text-gray-500">Categoria sugerida: {a.categoria_sugerida_texto}</p>}
           {res.sources.length > 0 && (
             <div>
               <h3 className="font-medium">Fontes consultadas</h3>
@@ -410,9 +413,10 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicia
             </div>
           )}
 
-          <details className="text-xs text-gray-500">
-            <summary>Dados brutos ({res.model})</summary>
+          <div>
             <CopyBlock text={JSON.stringify(res, null, 2)} label="Copiar JSON" />
+          </div>
+            </div>
           </details>
         </div>
       )}
