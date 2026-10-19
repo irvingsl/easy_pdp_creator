@@ -13,6 +13,7 @@ const ORIGEM: Record<string, string> = {
   contado_na_foto: "contado na foto",
   web: "da web, sem confirmação",
   sugerido_web: "sugestão da web, confirme",
+  catalogo: "do catálogo do ML (peça equivalente)",
 };
 
 export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false, temIdentificacao = false }: { produtoId: string; inicial: Rascunho | null; estoque: number; autoStart?: boolean; temIdentificacao?: boolean }) {
@@ -58,9 +59,13 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
       let novo = j1.rascunho as Rascunho;
       setR(novo);
       setPrecoTxt("");
-      setMsg("Escolhendo a categoria no Mercado Livre…");
-      const jc = (await post("/api/anuncios/validar", { produtoId, sugerir: true })) as { categorias?: { id: string }[] };
-      const cat = jc.categorias?.[0]?.id;
+      // a categoria já pode vir do produto equivalente do catálogo; senão, pede a sugestão ao ML
+      let cat = novo.categoria_id;
+      if (!cat) {
+        setMsg("Escolhendo a categoria no Mercado Livre…");
+        const jc = (await post("/api/anuncios/validar", { produtoId, sugerir: true })) as { categorias?: { id: string }[] };
+        cat = jc.categorias?.[0]?.id;
+      }
       if (cat) {
         novo = { ...novo, categoria_id: cat };
         setR(novo);

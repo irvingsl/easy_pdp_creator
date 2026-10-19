@@ -1,10 +1,16 @@
 import { notasParaIA, type DadosConfirmados } from "@/domain/dados-confirmados";
 import type { PartAnalysis } from "@/lib/gemini";
 
-export type Identificacao = { analysis?: PartAnalysis };
+export type Identificacao = {
+  analysis?: PartAnalysis;
+  modeloCatalogo?: { nome: string; marca: string; codigoBuscado: string; categoria: string | null; atributos: { id: string; nome: string; valor: string }[] } | null;
+};
+
+/** O que é identidade do produto de outra marca (não se herda): marca, números, códigos, estado. */
+const NAO_HERDAR = /^(BRAND|PART_NUMBER|OEM|GTIN|EAN|MPN|SELLER_SKU|ITEM_CONDITION|MODEL|ALPHANUMERIC_MODEL|LINE|MANUFACTURER)$/;
 
 /** Reúne os fatos do produto, separando o que o vendedor confirmou do que veio da IA/web. */
-export function fatosDoProduto(oemCode: string | null, conf: DadosConfirmados | null, a: PartAnalysis | undefined) {
+export function fatosDoProduto(oemCode: string | null, conf: DadosConfirmados | null, a: PartAnalysis | undefined, modelo?: Identificacao["modeloCatalogo"]) {
   const linhas: string[] = [];
   const confirmados = notasParaIA(oemCode, conf);
   if (confirmados) linhas.push(confirmados);
@@ -17,6 +23,12 @@ export function fatosDoProduto(oemCode: string | null, conf: DadosConfirmados | 
     for (const c of (a.codigos ?? []).filter((c) => c.classe === "equivalente" && c.confianca !== "baixa")) linhas.push(`Código equivalente (${c.origem}): ${c.marca ?? ""} ${c.codigo}`);
     for (const ap of a.aplicacoes ?? []) linhas.push(`Aplicação (${ap.origem}, não confirmada pelo vendedor): ${ap.descricao}${ap.anos ? ` ${ap.anos}` : ""}`);
     if (a.preco?.minimo != null) linhas.push(`Faixa de preço vista na web: R$ ${a.preco.minimo} a R$ ${a.preco.maximo} (${a.preco.formato_de_referencia ?? "unidade"})`);
+  }
+  if (modelo) {
+    for (const at of modelo.atributos) {
+      if (NAO_HERDAR.test(at.id)) continue;
+      linhas.push(`Atributo do catálogo do ML (produto equivalente "${modelo.nome}", outra marca/código; vale se for a mesma peça): ${at.nome} = ${at.valor}`);
+    }
   }
   return linhas.join("\n");
 }

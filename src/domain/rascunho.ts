@@ -7,7 +7,7 @@ export type CampoFicha = {
   valor: string;
   /** para campos de lista: id da opção escolhida */
   valor_id?: string;
-  origem?: "confirmado" | "lido_no_item" | "contado_na_foto" | "medido" | "vendedor";
+  origem?: "confirmado" | "lido_no_item" | "contado_na_foto" | "medido" | "vendedor" | "catalogo";
   obrigatorio?: boolean;
   opcoes?: { id: string; name: string }[];
   unidades?: string[];

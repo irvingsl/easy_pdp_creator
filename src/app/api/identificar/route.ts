@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { identifyPart, organizarPesquisa, pesquisaWeb, type PartAnalysis } from "@/lib/gemini";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
-import { buscarPorPalavras, lookupPartNumber, type CatalogHit } from "@/marketplaces/mercadolivre/catalog";
+import { buscarPorPalavras, lookupPartNumber, modeloDoCatalogo, type CatalogHit, type ModeloCatalogo } from "@/marketplaces/mercadolivre/catalog";
 import { BUCKET_ORIGINAIS } from "@/domain/types";
 import { notasParaIA, type DadosConfirmados } from "@/domain/dados-confirmados";
 import { gravarUso, usoStore } from "@/lib/uso";
@@ -324,6 +324,15 @@ async function tratar(request: NextRequest) {
       return { ...c, relevante, ignorado: c.exact && !relevante ? "existe no catálogo, mas é outro tipo de peça (ignorado)" : undefined };
     });
 
+    // Produto do catálogo (de outra marca/código, p.ex. a montadora) que serve de modelo para a ficha técnica
+    let modeloCatalogo: ModeloCatalogo | null = null;
+    try {
+      const alvo = catalog.find((c) => c.relevante && c.products[0]);
+      if (token && alvo) modeloCatalogo = await modeloDoCatalogo(token, alvo);
+    } catch {
+      /* o modelo é um complemento */
+    }
+
     const alnum = (t?: string | null) => (t ?? "").replace(/[^0-9a-z]/gi, "").toLowerCase();
     const mainFound = catalog.some((c) => c.relevante && alnum(c.code) === alnum(a.numero_peca_principal));
     const result = {
@@ -333,6 +342,7 @@ async function tratar(request: NextRequest) {
       cego: !!cego,
       sources: p.sources,
       catalog,
+      modeloCatalogo,
       certeza: certainty(p.sources.length, a.candidatos?.length ?? 0, !!a.numero_peca_principal, mainFound, p.visao?.paginas.length ?? 0),
       model: p.model,
       buscaWeb: p.pesquisou,

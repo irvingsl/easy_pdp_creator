@@ -529,14 +529,14 @@ function buildFichaPrompt(fatos: string, campos: unknown[]) {
 Para cada campo, preencha somente se houver evidência nos fatos.
 
 Regras:
-1. Use apenas fatos confirmados pelo vendedor, gravados/lidos no item, contados ou medidos nas fotos. NÃO use nada marcado como vindo da web, de pesquisa ou "não confirmado pelo vendedor".
+1. Use fatos confirmados pelo vendedor, gravados/lidos no item, contados ou medidos nas fotos, e os "Atributo do catálogo do ML (produto equivalente…)": a peça é idêntica à do produto equivalente, então esses valores valem (origem "catalogo"), exceto marca, números de peça, GTIN e OEM. NÃO use nada marcado como vindo da web, de pesquisa ou "não confirmado pelo vendedor".
 2. Não invente e não deduza por semelhança com outras peças. Sem evidência, omita o campo.
 3. Campo "number_unit": "valor" com número e unidade permitida (ex.: "200 mm"). Campo "number": só o número. Campo "list": devolva "valor_id" de uma das opções (e "valor" com o nome dela).
 4. "Código OEM" só com número que os fatos digam ser OEM/original; o número gravado de um fabricante de reposição não é OEM.
 5. "Origem" só se houver texto gravado de fabricação (ex.: "Indústria Brasileira" → "Brasil").
 6. Registros e certificações (ex.: INMETRO) só se o número aparecer nos fatos.
 
-Responda apenas com um bloco \`\`\`json: uma lista [{ "id": string, "valor": string, "valor_id": string|null, "origem": "confirmado"|"lido_no_item"|"contado_na_foto"|"medido" }].
+Responda apenas com um bloco \`\`\`json: uma lista [{ "id": string, "valor": string, "valor_id": string|null, "origem": "confirmado"|"lido_no_item"|"contado_na_foto"|"medido"|"catalogo" }].
 
 CAMPOS:
 ${JSON.stringify(campos)}

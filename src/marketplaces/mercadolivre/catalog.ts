@@ -65,3 +65,35 @@ export async function buscarPorPalavras(token: string, q: string) {
   const b = r.body as { results?: Prod[] } | null;
   return (b?.results ?? []).map((p) => ({ id: p.id, name: p.name, brand: attr(p, "BRAND"), partNumber: attr(p, "PART_NUMBER") }));
 }
+
+export type ModeloCatalogo = {
+  codigoBuscado: string;
+  produtoId: string;
+  nome: string;
+  marca: string;
+  dominio: string | null;
+  categoria: string | null;
+  /** atributos preenchidos do produto do catálogo (a base para a ficha técnica) */
+  atributos: { id: string; nome: string; valor: string }[];
+  /** campos que a resposta do ML trouxe, para sabermos o que mais dá para aproveitar (compatibilidade etc.) */
+  chaves: string[];
+};
+
+/** Detalhes completos de um produto do catálogo: serve de modelo (ficha técnica) para uma peça idêntica de outra marca/código. */
+export async function modeloDoCatalogo(token: string, hit: CatalogHit): Promise<ModeloCatalogo | null> {
+  const p = hit.products[0];
+  if (!p) return null;
+  const r = await mlGet(`/products/${encodeURIComponent(p.id)}`, token);
+  const b = r.body as { name?: string; domain_id?: string; category_id?: string; attributes?: { id: string; name?: string; value_name?: string }[] } | null;
+  if (!r.ok || !b) return null;
+  return {
+    codigoBuscado: hit.code,
+    produtoId: p.id,
+    nome: b.name ?? p.name,
+    marca: p.brand,
+    dominio: b.domain_id ?? null,
+    categoria: b.category_id ?? p.category ?? null,
+    atributos: (b.attributes ?? []).filter((a) => a.value_name).map((a) => ({ id: a.id, nome: a.name ?? a.id, valor: String(a.value_name) })),
+    chaves: Object.keys(b),
+  };
+}

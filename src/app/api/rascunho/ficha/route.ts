@@ -29,7 +29,7 @@ async function tratar(request: NextRequest) {
 
   try {
     const campos = camposDaFicha(await atributosDaCategoria(token, r.categoria_id));
-    const fatos = fatosDoProduto(produto.oem_code, produto.dados_confirmados as DadosConfirmados | null, (produto.identificacao as Identificacao | null)?.analysis);
+    const fatos = fatosDoProduto(produto.oem_code, produto.dados_confirmados as DadosConfirmados | null, (produto.identificacao as Identificacao | null)?.analysis, (produto.identificacao as Identificacao | null)?.modeloCatalogo);
     // medidas do rascunho que o vendedor preencheu à mão também são fatos
     const extras = (r.atributos ?? []).filter((a) => a.origem !== "web").map((a) => `Atributo do rascunho (${a.origem}): ${a.nome} = ${a.valor}`);
     const entrada = [fatos, ...extras].filter(Boolean).join("\n");

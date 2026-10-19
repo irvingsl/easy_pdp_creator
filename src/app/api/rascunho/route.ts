@@ -46,6 +46,8 @@ async function tratar(request: NextRequest) {
     avisos: Array.isArray(x.avisos) ? x.avisos : [],
     geradoEm: new Date().toISOString(),
     fatos_hash: hash,
+    // a categoria do produto equivalente do catálogo é a melhor sugestão (mesma peça)
+    categoria_id: existente?.categoria_id ?? (produto.identificacao as Identificacao | null)?.modeloCatalogo?.categoria ?? undefined,
   };
   await supabase.from("produtos").update({ rascunho }).eq("id", produtoId);
   return NextResponse.json({ rascunho });
