@@ -263,6 +263,17 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
               >
                 {f.manterOriginal ? "Voltar ao fundo branco" : "Refazer fundo"}
               </button>
+              {f.originalUrl && (
+                // abre o Google Lens no navegador do vendedor (conexão e sessão dele): gratuito e sem raspagem
+                <a
+                  className={smallBtn}
+                  href={`https://lens.google.com/uploadbyurl?url=${encodeURIComponent(f.originalUrl)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Buscar no Google Lens
+                </a>
+              )}
               <button
                 type="button"
                 disabled={disabled}
