@@ -22,7 +22,7 @@ const STATUS_LABEL = { pendente: "Processando", ok: "Fundo branco pronto", erro:
 const smallBtn =
   "rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800";
 
-export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 50 }: { produtoId: string; userId: string; fotos: FotoView[]; sensibilidadeInicial?: number }) {
+export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 50, fotoBuscaInicial = null }: { produtoId: string; userId: string; fotos: FotoView[]; sensibilidadeInicial?: number; fotoBuscaInicial?: string | null }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null); // texto de progresso
   const [error, setError] = useState("");
@@ -35,6 +35,16 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
     const { error } = await createClient().auth.updateUser({ data: { limiar_fundo: v } });
     setSensMsg(error ? "Não consegui salvar na conta" : "Salvo na sua conta ✓");
   }
+  // Foto que o vendedor escolheu para a busca por imagem (vale para a próxima identificação)
+  const [fotoBusca, setFotoBusca] = useState<string | null>(fotoBuscaInicial);
+  async function escolherFotoBusca(id: string) {
+    const supabase = createClient();
+    const { data } = await supabase.from("produtos").select("dados_confirmados").eq("id", produtoId).maybeSingle();
+    const { error } = await supabase.from("produtos").update({ dados_confirmados: { ...((data?.dados_confirmados as object) ?? {}), foto_busca: id } }).eq("id", produtoId);
+    if (error) return setError(error.message);
+    setFotoBusca(id);
+  }
+
   // teste forçado da busca por imagem (SerpApi) numa foto
   const [lensTxt, setLensTxt] = useState<Record<string, string>>({});
   async function testarLens(id: string) {
@@ -131,6 +141,8 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
   const disabled = busy !== null;
   // A principal é a primeira com versão processada; o ML exige fundo branco nela, então só vale "fundo branco" (não a original)
   const elegivel = (f: FotoView) => f.status === "ok" && !!f.processadaUrl && !f.manterOriginal;
+  // pode ser principal qualquer foto com imagem pronta; com a original, o ML recomenda fundo branco (aviso)
+  const podeSerPrincipal = (f: FotoView) => f.status === "ok" && !!f.processadaUrl;
   const principal = fotos.find((f) => f.processadaUrl);
   return (
     <section className="flex flex-col gap-4">
@@ -185,7 +197,7 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
       </div>
       {principal && !elegivel(principal) && (
         <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          A foto principal está com a original (sem fundo branco). O Mercado Livre exige fundo branco na primeira foto: escolha outra como principal ou volte ao fundo branco.
+          A foto principal está com o fundo original. O Mercado Livre recomenda fundo branco na primeira foto: a escolha é sua, mas o anúncio pode perder qualidade na busca. Para trocar, use Tornar principal em outra foto ou Voltar ao fundo branco.
         </p>
       )}
       {busy && <p className="text-sm text-gray-500">{busy}</p>}
@@ -231,17 +243,20 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
               ))}
             </div>
             <div className="flex flex-wrap gap-2">
-              {principal?.id !== f.id && elegivel(f) && (
+              {principal?.id !== f.id && podeSerPrincipal(f) && (
                 <button
                   type="button"
                   disabled={disabled}
                   className={smallBtn}
-                  onClick={() => run("Definindo a principal", () => makeMain(createClient(), { fotoId: f.id, ordemAtual: fotos.map((x) => ({ id: x.id, ordem: x.ordem })) }))}
+                  onClick={() => {
+                    if (!elegivel(f) && !window.confirm("Esta foto está com o fundo original. O Mercado Livre recomenda fundo branco na foto principal; o anúncio pode perder qualidade na busca. Usar mesmo assim?")) return;
+                    run("Definindo a principal", () => makeMain(createClient(), { fotoId: f.id, ordemAtual: fotos.map((x) => ({ id: x.id, ordem: x.ordem })) }));
+                  }}
                 >
                   Tornar principal
                 </button>
               )}
-              {!f.manterOriginal && principal?.id !== f.id && (
+              {!f.manterOriginal && (
                 <button
                   type="button"
                   disabled={disabled}
@@ -280,6 +295,9 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
                 }
               >
                 {f.manterOriginal ? "Voltar ao fundo branco" : "Refazer fundo"}
+              </button>
+              <button type="button" className={smallBtn} onClick={() => escolherFotoBusca(f.id)} disabled={fotoBusca === f.id}>
+                {fotoBusca === f.id ? "✓ Foto da busca por imagem" : "Usar na busca por imagem"}
               </button>
               {f.originalUrl && (
                 // abre o Google Lens no navegador do vendedor (conexão e sessão dele): gratuito e sem raspagem

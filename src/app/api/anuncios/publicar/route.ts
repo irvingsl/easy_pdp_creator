@@ -34,7 +34,6 @@ export async function POST(request: NextRequest) {
     if (typeof precoOverride === "number" && precoOverride > 0) payload.price = preco ?? 0;
     if (typeof freteGratisOverride === "boolean") payload.shipping.free_shipping = freteGratisOverride;
     if (!preco || preco <= 0) return NextResponse.json({ error: "informe o preço" }, { status: 400 });
-    if (!p.fotoPrincipalOk) return NextResponse.json({ error: "a foto principal precisa ser a versão com fundo branco: use \"Tornar principal\" em uma foto processada" }, { status: 400 });
     if (!payload.pictures.length) return NextResponse.json({ error: "o produto precisa de ao menos uma foto processada" }, { status: 400 });
 
     const v = await mlPost("/items/validate", token, payload);

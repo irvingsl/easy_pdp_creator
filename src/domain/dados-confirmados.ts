@@ -4,6 +4,8 @@ export type DadosConfirmados = {
   numero_peca?: string;
   /** veículo/aplicação que o vendedor já sabe (ajuda muito a pesquisa) */
   veiculo?: string;
+  /** id da foto que o vendedor escolheu para a busca por imagem */
+  foto_busca?: string;
   caracteristicas?: { nome: string; valor: string; unidade?: string }[];
 };
 

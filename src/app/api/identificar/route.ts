@@ -119,7 +119,7 @@ async function tratar(request: NextRequest) {
 
   const { data: produto } = await supabase
     .from("produtos")
-    .select("id, oem_code, dados_confirmados, produto_fotos(path_original, ordem)")
+    .select("id, oem_code, dados_confirmados, produto_fotos(id, path_original, ordem)")
     .eq("id", produtoId)
     .maybeSingle();
   if (!produto) return NextResponse.json({ error: "produto não encontrado" }, { status: 404 });
@@ -212,7 +212,9 @@ async function tratar(request: NextRequest) {
       // 1) Busca por imagem (Google Lens) na foto que melhor mostra a peça; plano B na seguinte se vier pouco
       const tIni = Date.now(); // a função da Vercel morre em 60 s: os tempos abaixo respeitam o que já foi gasto
       const fotosOrd = [...produto.produto_fotos].sort((x, y) => x.ordem - y.ordem);
-      const geral = parcial.analysis.foto_geral && fotosOrd[parcial.analysis.foto_geral - 1] ? parcial.analysis.foto_geral - 1 : 0;
+      // a foto escolhida pelo vendedor vem primeiro; senão a que a leitura achou melhor; senão a primeira
+      const escolhida = fotosOrd.findIndex((f) => f.id === (produto.dados_confirmados as DadosConfirmados | null)?.foto_busca);
+      const geral = escolhida >= 0 ? escolhida : parcial.analysis.foto_geral && fotosOrd[parcial.analysis.foto_geral - 1] ? parcial.analysis.foto_geral - 1 : 0;
       const ordemLens = [fotosOrd[geral], ...fotosOrd.filter((_, i) => i !== geral)].filter(Boolean).slice(0, 2);
       const lensFoto = async (f: (typeof fotosOrd)[number], limite: number) => {
         const { data: url } = await supabase.storage.from(BUCKET_ORIGINAIS).createSignedUrl(f.path_original, 300);
