@@ -28,11 +28,18 @@ export function fatosDoProduto(oemCode: string | null, conf: DadosConfirmados | 
   if (a) {
     linhas.push(`Tipo de item: ${a.tipo_item ?? "?"}; formato de venda: ${a.formato_de_venda ?? "?"}`);
     if (a.marca?.valor) linhas.push(`Marca (${a.marca.origem}, confiança ${a.marca.confianca}): ${a.marca.valor}`);
+    // Número confirmado igual a um candidato: o produto passa a ser esse, e as aplicações do candidato (achadas em anúncios
+    // com a mesma marca e o mesmo código) são evidência forte para título e descrição
+    const cand = numeroConfirmado ? (a.candidatos ?? []).find((c) => alnum(c.numero_de_peca) === alnum(numeroConfirmado)) : undefined;
+    if (cand) {
+      linhas.push(`Produto identificado pelo número confirmado: ${cand.descricao}${cand.marca ? ` (marca ${cand.marca})` : ""}.`);
+      for (const ap of cand.aplicacoes ?? []) linhas.push(`Aplicação (evidência forte: anúncios com a mesma marca e o mesmo código ${numeroConfirmado}): ${ap}`);
+    }
     if (a.numero_peca_principal && !numeroConfirmado) linhas.push(`Número de peça principal (gravado no item): ${a.numero_peca_principal}`);
     for (const t of (a.textos_gravados ?? []).filter((t) => !ehLeituraDoNumero(t.texto))) linhas.push(`Texto gravado no item${t.foto ? ` (foto ${t.foto})` : ""}: ${t.texto}`);
     for (const c of a.caracteristicas ?? []) linhas.push(`Característica (${c.origem}, confiança ${c.confianca}): ${c.nome} = ${c.valor}${c.unidade ? ` ${c.unidade}` : ""}`);
     for (const c of (a.codigos ?? []).filter((c) => c.classe === "equivalente" && c.confianca !== "baixa")) linhas.push(`Código equivalente (${c.origem}): ${c.marca ?? ""} ${c.codigo}`);
-    for (const ap of a.aplicacoes ?? []) linhas.push(`Aplicação (${ap.origem}, não confirmada pelo vendedor): ${ap.descricao}${ap.anos ? ` ${ap.anos}` : ""}`);
+    for (const ap of a.aplicacoes ?? []) linhas.push(`Aplicação (${ap.origem}, evidência fraca, não confirmada pelo vendedor): ${ap.descricao}${ap.anos ? ` ${ap.anos}` : ""}`);
     if (a.preco?.minimo != null) linhas.push(`Faixa de preço vista na web: R$ ${a.preco.minimo} a R$ ${a.preco.maximo} (${a.preco.formato_de_referencia ?? "unidade"})`);
   }
   if (modelo) {
