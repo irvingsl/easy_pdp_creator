@@ -206,26 +206,41 @@ async function tratar(request: NextRequest) {
           }
         }
       }
-      // Busca por imagem (se houver chave) roda junto com a pesquisa por texto, sem somar tempo
-      const primeira = [...produto.produto_fotos].sort((a, b) => a.ordem - b.ordem)[0];
-      const lensP = (async () => {
-        if (!primeira || !process.env.SERPAPI_KEY) return null;
-        const { data: url } = await supabase.storage.from(BUCKET_ORIGINAIS).createSignedUrl(primeira.path_original, 300);
-        return url?.signedUrl ? buscaLens(url.signedUrl) : null;
-      })();
-      // as duas primeiras fotos originais acompanham a pergunta: o modelo vê o formato da peça ao escolher o que pesquisar
-      const imagens = await Promise.all(
-        [...produto.produto_fotos].sort((a, b) => a.ordem - b.ordem).slice(0, 2).map(async (f) => {
-          const { data, error } = await supabase.storage.from(BUCKET_ORIGINAIS).download(f.path_original);
-          if (error || !data) return null;
-          return { mime: "image/jpeg", data: Buffer.from(await data.arrayBuffer()).toString("base64") };
-        }),
-      );
-      const [r, lens] = await Promise.all([
-        pesquisaWeb(parcial.analysis, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null), undefined, imagens.filter((x): x is { mime: string; data: string } => !!x)),
-        lensP,
-      ]);
-      const tentativas = [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
+      // 1) Busca por imagem (Google Lens) na foto que melhor mostra a peça; plano B na seguinte se vier pouco
+      const tIni = Date.now(); // a função da Vercel morre em 60 s: os tempos abaixo respeitam o que já foi gasto
+      const fotosOrd = [...produto.produto_fotos].sort((x, y) => x.ordem - y.ordem);
+      const geral = parcial.analysis.foto_geral && fotosOrd[parcial.analysis.foto_geral - 1] ? parcial.analysis.foto_geral - 1 : 0;
+      const ordemLens = [fotosOrd[geral], ...fotosOrd.filter((_, i) => i !== geral)].filter(Boolean).slice(0, 2);
+      const lensFoto = async (f: (typeof fotosOrd)[number], limite: number) => {
+        const { data: url } = await supabase.storage.from(BUCKET_ORIGINAIS).createSignedUrl(f.path_original, 300);
+        return url?.signedUrl ? buscaLens(url.signedUrl, limite) : null;
+      };
+      let lens = !process.env.SERPAPI_KEY || !ordemLens[0] ? null : await lensFoto(ordemLens[0], 22000);
+      if (process.env.SERPAPI_KEY && ordemLens[1] && (lens?.matches.length ?? 0) < 3 && Date.now() - tIni < 26000) {
+        const l2 = await lensFoto(ordemLens[1], 16000);
+        if (l2) {
+          const vistos = new Set((lens?.matches ?? []).map((m) => m.titulo));
+          lens = { matches: [...(lens?.matches ?? []), ...l2.matches.filter((m) => !vistos.has(m.titulo))], overview: lens?.overview ?? l2.overview, erro: lens?.matches.length || l2.matches.length ? undefined : lens?.erro ?? l2.erro, ms: (lens?.ms ?? 0) + (l2.ms ?? 0) };
+        }
+      }
+      const lensBasta = (lens?.matches.length ?? 0) >= 3;
+
+      // 2) Pesquisa na web (grounding) só como reserva: sem chave do Lens ou quando a busca por imagem não bastou
+      type Reserva = Awaited<ReturnType<typeof pesquisaWeb>>;
+      let r: Reserva;
+      if (lensBasta) {
+        r = { status: 200, model: parcial.model, pergunta: "(busca por imagem no lugar da pesquisa na web)", texto: "", sources: [], consultas: [], pesquisou: true } as Reserva;
+      } else {
+        const imagens = await Promise.all(
+          fotosOrd.slice(0, 2).map(async (f) => {
+            const { data, error } = await supabase.storage.from(BUCKET_ORIGINAIS).download(f.path_original);
+            if (error || !data) return null;
+            return { mime: "image/jpeg", data: Buffer.from(await data.arrayBuffer()).toString("base64") };
+          }),
+        );
+        r = await pesquisaWeb(parcial.analysis, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null), Math.max(15000, 52000 - (Date.now() - tIni)), imagens.filter((x): x is { mime: string; data: string } => !!x));
+      }
+      const tentativas = lensBasta ? parcial.tentativas : [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
       if (!("texto" in r)) {
         return NextResponse.json({ ...parcial, tentativas, perguntaPesquisa: r.pergunta, erroPesquisa: r.erro, etapas: [...(parcial.etapas ?? []), "pesquisa(falhou)"] });
       }
@@ -247,14 +262,14 @@ async function tratar(request: NextRequest) {
       const out: Parcial = {
         ...parcial,
         textoPesquisa: textoFinal,
-        narrativa: [parcial.narrativa, `— Pesquisa na web —\n${textoFinal}`].filter(Boolean).join("\n\n"),
+        narrativa: [parcial.narrativa, `— ${lensBasta ? "Busca por imagem e catálogo" : "Pesquisa na web"} —\n${textoFinal}`].filter(Boolean).join("\n\n"),
         sources: r.sources,
         consultas: r.consultas,
         pesquisou: true,
         model: r.model,
         perguntaPesquisa: r.pergunta,
         tentativas,
-        etapas: [...(parcial.etapas ?? []), lens ? (lens.erro ? "pesquisa+lens(erro)" : "pesquisa+lens") : "pesquisa"],
+        etapas: [...(parcial.etapas ?? []), lensBasta ? "lens(sem grounding)" : lens ? (lens.erro ? "pesquisa+lens(erro)" : "pesquisa+lens(pouco)") : "pesquisa"],
         ...(lens?.erro ? { erroPesquisa: `Busca por imagem: ${lens.erro}` } : {}),
       };
       return NextResponse.json(out);

@@ -25,6 +25,8 @@ export type PartAnalysis = {
     fonte_url: string | null;
   }[];
   numero_peca_principal: string | null;
+  /** foto (1..N) que melhor mostra a peça inteira, para a busca por imagem */
+  foto_geral?: number | null;
   candidatos?: {
     numero_de_peca: string;
     marca: string | null;
@@ -93,6 +95,7 @@ const SCHEMA = `{
   "aplicacoes": [{ "descricao": string, "anos": string|null, "origem": "fonte_web"|"suposicao", "fonte_url": string|null }],
   "preco": { "minimo": number|null, "maximo": number|null, "formato_de_referencia": string|null,
              "condicao": "novo"|"usado"|null, "fontes": string[], "observacao": string|null },
+  "foto_geral": number|null,
   "termos_busca": string[],
   "categoria_sugerida_texto": string|null,
   "fotos_sugeridas": string[],
@@ -128,6 +131,8 @@ o que é, com a maior precisão que as evidências permitirem, sem inventar.
 ## Como proceder
 Passo 1 - Observar. Descreva o que vê: tipo de item, formato (unidade, kit, par, conjunto), componentes
 visíveis, material, estado (novo, usado, desgastado).
+Passo 1b - Escolher a foto geral: em "foto_geral" informe o número (1, 2, 3…) da foto que melhor mostra a peça
+inteira, nítida e de frente, que servirá para uma busca por imagem; null se nenhuma servir.
 Passo 2 - Ler. Transcreva literalmente todo texto, logotipo, número e código visível. Diga em qual foto está
 e se a leitura é boa, parcial ou ruim. Não corrija nem complete o que não estiver legível. Compare as fotos que mostram
 a mesma gravação. Atenção às bordas: se um número parece começar ou terminar fora da área visível, ou tem um dígito
@@ -357,7 +362,7 @@ ${pesquisa}
 """
 
 Atualize o JSON da análise com o que a pesquisa trouxe, mantendo o que as fotos já mostravam. Regras: use só o que está no resultado da pesquisa, com a URL de cada informação quando houver; se a pesquisa não encontrou algo, use null; se as fontes divergirem, mostre as duas versões; os fatos confirmados pelo vendedor prevalecem sobre qualquer fonte; diferencie o número de peça do item do número de um kit ou conjunto; nunca invente preço nem URL.
-Números vindos da pesquisa são CANDIDATOS: preencha "candidatos" (até 5) com o que combina, o que não foi confirmado e como confirmar (qual medida ou foto distingue). Só preencha "numero_peca_principal" se o número estiver gravado e legível no item ou confirmado pelo vendedor; caso contrário, deixe null. Aplicações ficam dentro de cada candidato. Se a pesquisa trouxer "busca por imagem" ou produtos do catálogo, use os títulos para sugerir candidatos (código, aplicação, posição): são pistas de peças parecidas, nunca confirmação, e o código lido no item prevalece sobre o de um título. Exceção: se a leitura no item for parcial ou curta e títulos de mais de um anúncio trouxerem, para a mesma marca, um código que a contém (ex.: leitura "761" e títulos "Sampel 3761"), liste esse código como candidato forte e explique que a leitura é compatível com o final dele; continue pedindo confirmação no item. Se "numero_peca_principal" já existe na análise anterior, NÃO crie candidatos novos: use a pesquisa só para confirmar esse número e preencher características, aplicações e equivalentes (estes só se a pesquisa os ligar explicitamente ao número).
+Números vindos da pesquisa são CANDIDATOS: preencha "candidatos" (até 5) com o que combina, o que não foi confirmado e como confirmar (qual medida ou foto distingue). Só preencha "numero_peca_principal" se o número estiver gravado e legível no item ou confirmado pelo vendedor; caso contrário, deixe null. Aplicações ficam dentro de cada candidato. Se a pesquisa trouxer "busca por imagem" ou produtos do catálogo, use os títulos para sugerir candidatos (código, aplicação, posição): são pistas de peças parecidas, nunca confirmação, e o código lido no item prevalece sobre o de um título. Códigos de montadora (OEM) que aparecem nos títulos junto do mesmo tipo de peça (ex.: o código de uma montadora) entram em "codigos" com classe "equivalente", a marca da montadora e origem "inferido_pela_pesquisa"; modelos e anos citados nos títulos entram em "aplicacoes" com origem "fonte_web". Exceção: se a leitura no item for parcial ou curta e títulos de mais de um anúncio trouxerem, para a mesma marca, um código que a contém (ex.: leitura "761" e títulos "Sampel 3761"), liste esse código como candidato forte e explique que a leitura é compatível com o final dele; continue pedindo confirmação no item. Se "numero_peca_principal" já existe na análise anterior, NÃO crie candidatos novos: use a pesquisa só para confirmar esse número e preencher características, aplicações e equivalentes (estes só se a pesquisa os ligar explicitamente ao número).
 
 Responda SOMENTE com o JSON, dentro de um bloco \`\`\`json, neste formato:
 ${SCHEMA}`;
