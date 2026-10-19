@@ -125,7 +125,8 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicia
   }
 
   // número de peça que o vendedor já confirmou (vem do cadastro; muda na hora ao tocar em "É este")
-  const [confirmado, setConfirmado] = useState<string | null>(oemInicial);
+  // vem do banco (a página atualiza depois do clique), para nunca mostrar "confirmado" algo que não foi gravado
+  const confirmado = oemInicial;
   const mesmoCodigo = (a?: string | null, b?: string | null) => !!a && !!b && a.replace(/[^0-9a-z]/gi, "").toLowerCase() === b.replace(/[^0-9a-z]/gi, "").toLowerCase();
 
   async function usarComoOem(code: string, marca?: string | null) {
@@ -137,7 +138,6 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false, oemInicia
       .update({ oem_code: code, dados_confirmados: { ...atual, numero_peca: code, ...(marca && !atual.marca ? { marca } : {}) } })
       .eq("id", produtoId);
     if (error) return setError(error.message);
-    setConfirmado(code);
     router.refresh();
   }
 

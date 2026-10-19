@@ -125,7 +125,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
       </Etapa>
 
       <Etapa n={1} titulo="Dados confirmados por você" resumo={temDados ? "preenchido" : "pendente: o que você conferiu com o item na mão"} aberto={proxima === "dados"}>
-        <DadosConfirmadosForm produtoId={produto.id} oemCode={produto.oem_code} inicial={(produto.dados_confirmados as DadosConfirmados) ?? {}} />
+        <DadosConfirmadosForm key={`${JSON.stringify(dc)}|${produto.oem_code ?? ""}`} produtoId={produto.id} oemCode={produto.oem_code} inicial={(produto.dados_confirmados as DadosConfirmados) ?? {}} />
       </Etapa>
 
       <Etapa n={2} titulo="Identificação com IA" resumo={produto.identificacao ? "feita" : "pendente"} aberto={proxima === "identificacao" || (auto && !produto.identificacao)}>

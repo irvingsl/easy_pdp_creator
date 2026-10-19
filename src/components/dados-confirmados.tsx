@@ -33,15 +33,26 @@ export function DadosConfirmadosForm({
   async function salvar() {
     setBusy(true);
     setMsg("");
+    const supabase = createClient();
+    // O que mudou no banco depois que esta tela abriu (ex.: "É este" na identificação, foto da busca) não pode ser apagado
+    const { data: atual } = await supabase.from("produtos").select("dados_confirmados, oem_code").eq("id", produtoId).maybeSingle();
+    const db = (atual?.dados_confirmados ?? {}) as DadosConfirmados;
+    // campo vazio aqui: se já estava vazio ao abrir, mantém o do banco; se havia valor, o vendedor limpou de propósito
+    const campo = (local: string, aberto: string, doBanco?: string | null) => local.trim() || (aberto ? undefined : doBanco || undefined);
+    const nomesAbertos = new Set((inicial.caracteristicas ?? []).map((c) => c.nome.toLowerCase()));
+    const locais = linhas
+      .filter((l) => l.nome.trim() && l.valor.trim())
+      .map((l) => ({ nome: l.nome.trim(), valor: l.valor.trim(), unidade: l.unidade.trim() || undefined }));
+    const nomesLocais = new Set(locais.map((c) => c.nome.toLowerCase()));
+    const novasNoBanco = (db.caracteristicas ?? []).filter((c) => !nomesAbertos.has(c.nome.toLowerCase()) && !nomesLocais.has(c.nome.toLowerCase()));
     const dados: DadosConfirmados = {
-      marca: marca.trim() || undefined,
-      numero_peca: numero.trim() || undefined,
-      veiculo: veiculo.trim() || undefined,
-      caracteristicas: linhas
-        .filter((l) => l.nome.trim() && l.valor.trim())
-        .map((l) => ({ nome: l.nome.trim(), valor: l.valor.trim(), unidade: l.unidade.trim() || undefined })),
+      ...db,
+      marca: campo(marca, inicial.marca ?? "", db.marca),
+      numero_peca: campo(numero, inicial.numero_peca ?? oemCode ?? "", db.numero_peca ?? atual?.oem_code),
+      veiculo: campo(veiculo, inicial.veiculo ?? "", db.veiculo),
+      caracteristicas: [...locais, ...novasNoBanco],
     };
-    const { error } = await createClient()
+    const { error } = await supabase
       .from("produtos")
       .update({ dados_confirmados: dados, oem_code: dados.numero_peca ?? null })
       .eq("id", produtoId);
