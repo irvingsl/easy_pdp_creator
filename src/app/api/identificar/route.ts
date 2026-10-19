@@ -15,6 +15,43 @@ const MAX_PHOTOS = 4;
 const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 /** Palavra que caracteriza o tipo de peça (a mais longa), p.ex. "embreagem". */
 const keyword = (tipo: string | null) => norm(tipo ?? "").split(/[^a-z0-9]+/).filter((w) => w.length >= 5).sort((a, b) => b.length - a.length)[0];
+const alnumN = (t?: string | null) => (t ?? "").replace(/[^0-9a-z]/gi, "").toLowerCase();
+
+/** Pesquisa já feita para o mesmo número de peça em outro produto do vendedor: evita pagar de novo por busca e organização. */
+async function pesquisaAnterior(supabase: Awaited<ReturnType<typeof createClient>>, produtoId: string, a: PartAnalysis): Promise<PartAnalysis | null> {
+  const num = alnumN(a.numero_peca_principal);
+  if (num.length < 6) return null;
+  const { data } = await supabase
+    .from("produtos")
+    .select("id, analysis:identificacao->analysis, web:identificacao->buscaWeb")
+    .neq("id", produtoId)
+    .not("identificacao", "is", null)
+    .order("identificado_em", { ascending: false })
+    .limit(50);
+  const achado = data?.find((x) => x.web === true && alnumN((x.analysis as PartAnalysis | null)?.numero_peca_principal) === num);
+  return (achado?.analysis as PartAnalysis | undefined) ?? null;
+}
+
+/** Junta ao que as fotos mostraram o que veio da web na pesquisa anterior (equivalentes, aplicações, preço, medidas de fonte web). */
+function mesclarPesquisa(atual: PartAnalysis, antigo: PartAnalysis): PartAnalysis {
+  const codigos = [...(atual.codigos ?? [])];
+  for (const c of antigo.codigos ?? []) {
+    if (c.classe === "equivalente" && !codigos.some((x) => alnumN(x.codigo) === alnumN(c.codigo))) codigos.push(c);
+  }
+  const nomes = new Set((atual.caracteristicas ?? []).map((c) => norm(c.nome)));
+  const caracteristicas = [...(atual.caracteristicas ?? [])];
+  for (const c of antigo.caracteristicas ?? []) {
+    if (c.origem === "fonte_web" && !nomes.has(norm(c.nome))) caracteristicas.push(c);
+  }
+  return {
+    ...atual,
+    codigos,
+    caracteristicas,
+    aplicacoes: atual.aplicacoes?.length ? atual.aplicacoes : antigo.aplicacoes ?? [],
+    preco: atual.preco ?? antigo.preco ?? null,
+  };
+}
+
 const significant = (code: string) => code.replace(/[^0-9a-z]/gi, "").length >= 6;
 
 /**
@@ -49,6 +86,8 @@ type Parcial = {
   erroPesquisa?: string;
   /** etapas que realmente rodaram (ajuda a diagnosticar tela antiga em cache) */
   etapas?: string[];
+  /** por que a pesquisa na web não foi feita (reaproveitada de outro produto ou dispensada pelo catálogo) */
+  pesquisaDispensada?: string;
 };
 
 /**
@@ -61,9 +100,11 @@ type Parcial = {
 export const POST = (request: NextRequest) => usoStore.run([], () => tratar(request));
 
 async function tratar(request: NextRequest) {
-  const { produtoId, cego, etapa = "fotos", parcial } = (await request.json().catch(() => ({}))) as {
+  const { produtoId, cego, forcar, etapa = "fotos", parcial } = (await request.json().catch(() => ({}))) as {
     produtoId?: string;
     cego?: boolean;
+    /** refazer a pesquisa na web mesmo que já exista (identificar de novo) */
+    forcar?: boolean;
     etapa?: "fotos" | "pesquisa" | "organizar" | "final";
     parcial?: Parcial;
   };
@@ -119,6 +160,43 @@ async function tratar(request: NextRequest) {
     if (!parcial?.analysis) return NextResponse.json({ error: "faltam os dados da etapa anterior" }, { status: 400 });
 
     if (etapa === "pesquisa") {
+      if (!forcar && !cego) {
+        // 1) o mesmo número de peça já foi pesquisado em outro produto
+        const ant = await pesquisaAnterior(supabase, produtoId, parcial.analysis);
+        if (ant) {
+          const out: Parcial = {
+            ...parcial,
+            analysis: mesclarPesquisa(parcial.analysis, ant),
+            pesquisou: true,
+            pesquisaDispensada: "Pesquisa reaproveitada de outro produto com o mesmo número de peça (sem custo). Use \"Identificar de novo\" para pesquisar outra vez.",
+            perguntaPesquisa: "(reaproveitada)",
+            etapas: [...(parcial.etapas ?? []), "pesquisa(reaproveitada)"],
+          };
+          return NextResponse.json(out);
+        }
+        // 2) o catálogo do ML já reconhece o número (e é o mesmo tipo de peça): dispensa a busca na web
+        const code = parcial.analysis.numero_peca_principal;
+        const token = code && significant(code) ? await getAccessToken(supabase) : null;
+        if (token && code) {
+          const hit = await lookupPartNumber(token, code);
+          const kw = keyword(parcial.analysis.tipo_item);
+          if (hit.exact && (!kw || hit.products.some((x) => norm(x.name).includes(kw)))) {
+            const diam = hit.products.map((x) => x.diameter).find(Boolean);
+            const caract = [...(parcial.analysis.caracteristicas ?? [])];
+            if (diam && !caract.some((c) => /di[aâ]metro/i.test(c.nome))) {
+              caract.push({ nome: "diâmetro", valor: diam.replace(/\s*mm$/i, ""), unidade: "mm", origem: "fonte_web", como: "Catálogo do Mercado Livre", confianca: "media" });
+            }
+            const out: Parcial = {
+              ...parcial,
+              analysis: { ...parcial.analysis, caracteristicas: caract },
+              pesquisaDispensada: "O catálogo do Mercado Livre já reconhece este número de peça, então a busca na web foi dispensada (sem custo). Use \"Identificar de novo\" para pesquisar na web e trazer aplicações e preços.",
+              perguntaPesquisa: "(dispensada)",
+              etapas: [...(parcial.etapas ?? []), "pesquisa(dispensada)"],
+            };
+            return NextResponse.json(out);
+          }
+        }
+      }
       const r = await pesquisaWeb(parcial.analysis, parcial.model, cego ? null : (produto.dados_confirmados as DadosConfirmados | null));
       const tentativas = [...parcial.tentativas, { model: "model" in r && r.model ? r.model : parcial.model, grounded: true, status: r.status }];
       if (!("texto" in r)) {
@@ -205,6 +283,7 @@ async function tratar(request: NextRequest) {
       erroPesquisa: p.erroPesquisa,
       tentativas: p.tentativas,
       etapas: p.etapas,
+      pesquisaDispensada: p.pesquisaDispensada,
       geradoEm: new Date().toISOString(),
     };
     await supabase.from("produtos").update({ identificacao: result, identificado_em: result.geradoEm }).eq("id", produtoId);

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { preencherFicha } from "@/lib/gemini";
 import { fatosDoProduto, type Identificacao } from "@/lib/fatos";
 import { gravarUso, usoStore } from "@/lib/uso";
+import { hashTexto } from "@/lib/hash";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
 import { atributosDaCategoria, camposDaFicha } from "@/marketplaces/mercadolivre/listing";
 import type { CampoFicha, Rascunho } from "@/domain/rascunho";
@@ -14,7 +15,7 @@ export const POST = (request: NextRequest) => usoStore.run([], () => tratar(requ
 
 /** Preenche a ficha técnica da categoria escolhida com os fatos do produto (sem usar o que veio só da web). */
 async function tratar(request: NextRequest) {
-  const { produtoId } = (await request.json().catch(() => ({}))) as { produtoId?: string };
+  const { produtoId, forcar } = (await request.json().catch(() => ({}))) as { produtoId?: string; forcar?: boolean };
   if (!produtoId) return NextResponse.json({ error: "produtoId obrigatório" }, { status: 400 });
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
@@ -31,7 +32,11 @@ async function tratar(request: NextRequest) {
     const fatos = fatosDoProduto(produto.oem_code, produto.dados_confirmados as DadosConfirmados | null, (produto.identificacao as Identificacao | null)?.analysis);
     // medidas do rascunho que o vendedor preencheu à mão também são fatos
     const extras = (r.atributos ?? []).filter((a) => a.origem !== "web").map((a) => `Atributo do rascunho (${a.origem}): ${a.nome} = ${a.valor}`);
-    const ia = await preencherFicha([fatos, ...extras].filter(Boolean).join("\n"), campos);
+    const entrada = [fatos, ...extras].filter(Boolean).join("\n");
+    // mesmos fatos e mesma categoria da última vez: não paga a IA de novo
+    const hash = hashTexto(`${r.categoria_id}|${entrada}|${campos.map((c) => c.id).join(",")}`);
+    if (!forcar && r.ficha?.length && r.ficha_hash === hash) return NextResponse.json({ ficha: r.ficha, reaproveitado: true });
+    const ia = await preencherFicha(entrada, campos);
     await gravarUso(supabase, produtoId, "ficha").catch(() => {});
     if (!ia.itens) return NextResponse.json({ error: "A IA não devolveu a ficha, tente de novo" }, { status: 502 });
 
@@ -49,7 +54,7 @@ async function tratar(request: NextRequest) {
         ...(sug?.origem ? { origem: sug.origem as CampoFicha["origem"] } : {}),
       };
     });
-    const novo: Rascunho = { ...r, ficha };
+    const novo: Rascunho = { ...r, ficha, ficha_hash: hash };
     await supabase.from("produtos").update({ rascunho: novo }).eq("id", produtoId);
     return NextResponse.json({ ficha });
   } catch (e) {

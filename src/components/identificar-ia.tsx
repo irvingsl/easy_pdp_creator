@@ -17,6 +17,7 @@ export type Identificacao = {
   certeza: { level: "alta" | "média" | "baixa"; reasons: string[] };
   model: string;
   buscaWeb?: boolean;
+  pesquisaDispensada?: string;
   consultas?: string[];
   visao?: VisaoResult | null;
   cego?: boolean;
@@ -81,6 +82,8 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false }: { produ
   }
 
   async function identificar() {
+    // identificar de novo refaz a pesquisa na web (sem reaproveitar nem dispensar)
+    const forcar = !!res && !res.emAndamento;
     setBusy(true);
     setError("");
     try {
@@ -89,8 +92,8 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false }: { produ
       // mostra já o que as fotos revelaram, enquanto a pesquisa segue
       setRes({ ...(parcial as object), catalog: [], certeza: { level: "baixa", reasons: ["Em andamento: pesquisa na web e catálogo ainda por vir"] }, emAndamento: true } as unknown as Identificacao);
       setFase("2/4 Pesquisando na web...");
-      parcial = await etapa("pesquisa", { produtoId, cego, etapa: "pesquisa", parcial });
-      if (parcial.pesquisou) {
+      parcial = await etapa("pesquisa", { produtoId, cego, forcar, etapa: "pesquisa", parcial });
+      if (parcial.pesquisou && (parcial as { textoPesquisa?: string }).textoPesquisa) {
         setFase("3/4 Organizando os resultados...");
         parcial = await etapa("organizar", { produtoId, cego, etapa: "organizar", parcial });
       }
@@ -162,7 +165,10 @@ export function IdentificarIA({ produtoId, inicial, autoStart = false }: { produ
               Resultado parcial (só das fotos). A pesquisa na web e a conferência no catálogo ainda estão rodando.
             </p>
           )}
-          {!res.emAndamento && res.buscaWeb === false && (
+          {!res.emAndamento && res.pesquisaDispensada && (
+            <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-200">{res.pesquisaDispensada}</p>
+          )}
+          {!res.emAndamento && res.buscaWeb === false && !res.pesquisaDispensada && (
             <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
               Nenhuma pesquisa na web foi feita nesta resposta (cota indisponível ou a IA decidiu não pesquisar). Ela veio só das fotos, sem fontes: trate preço e aplicações como suposição.
               {res.erroPesquisa && <span className="mt-1 block break-words text-xs">Motivo: {res.erroPesquisa}</span>}

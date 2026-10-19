@@ -24,6 +24,9 @@ export type Rascunho = {
   ficha?: CampoFicha[];
   /** oferecer frete grátis por conta do vendedor (onde o ML não o exige); o ML impõe quando obrigatório */
   frete_gratis?: boolean;
+  /** resumo dos fatos usados na geração: se não mudaram, não se paga a IA de novo */
+  fatos_hash?: string;
+  ficha_hash?: string;
   /** escolhas do vendedor para o Mercado Livre */
   categoria_id?: string;
   condicao?: "new" | "used";

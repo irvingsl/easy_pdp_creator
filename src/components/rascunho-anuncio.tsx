@@ -25,7 +25,7 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
     setBusy(true);
     setMsg("");
     try {
-      const res = await fetch("/api/rascunho", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ produtoId }) });
+      const res = await fetch("/api/rascunho", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ produtoId, forcar: true }) });
       const txt = await res.text();
       let j: { rascunho?: Rascunho; error?: string } = {};
       try {

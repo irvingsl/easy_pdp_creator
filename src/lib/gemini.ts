@@ -231,16 +231,20 @@ import { registrarChamada } from "./uso";
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
-async function callGemini(model: string, parts: Part[], grounded: boolean, maxOutputTokens = 8192, timeoutMs = 45000) {
+/** Jeitos de pedir ao modelo que não gaste tokens "pensando" (a API varia entre versões); guarda o que funcionou. */
+const SEM_PENSAR = [{ thinkingConfig: { thinkingBudget: 0 } }, { thinkingConfig: { thinkingLevel: "minimal" } }, {}] as const;
+let semPensarOk: number | null = null;
+
+async function callGemini(model: string, parts: Part[], grounded: boolean, maxOutputTokens = 8192, timeoutMs = 45000, semPensar = false) {
   const key = process.env.GEMINI_API_KEY!;
-  try {
+  const um = async (extra: Record<string, unknown>) => {
     const res = await fetch(`${API}/models/${model}:generateContent`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         contents: [{ role: "user", parts }],
         ...(grounded ? { tools: [{ google_search: {} }] } : {}),
-        generationConfig: { temperature: 0.2, maxOutputTokens },
+        generationConfig: { temperature: 0.2, maxOutputTokens, ...extra },
       }),
       signal: AbortSignal.timeout(Math.max(3000, timeoutMs)),
     });
@@ -255,6 +259,20 @@ async function callGemini(model: string, parts: Part[], grounded: boolean, maxOu
       status: res.status,
     });
     return { res, body };
+  };
+  try {
+    if (!semPensar) return await um({});
+    // tarefas simples (redação, preenchimento): sem raciocínio extra. Se a API recusar o parâmetro (400), tenta o próximo jeito.
+    const ordem = semPensarOk != null ? [semPensarOk] : SEM_PENSAR.map((_, i) => i);
+    let ultimo: Awaited<ReturnType<typeof um>> | null = null;
+    for (const i of ordem) {
+      ultimo = await um(SEM_PENSAR[i]);
+      if (ultimo.res.status !== 400) {
+        if (ultimo.res.ok) semPensarOk = i;
+        return ultimo;
+      }
+    }
+    return ultimo ?? (await um({}));
   } catch (e) {
     // demora demais: devolve 408 para o chamador trocar de modelo, em vez de a função inteira estourar (504)
     const timeout = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
@@ -406,7 +424,7 @@ export async function organizarPesquisa(prev: PartAnalysis, notes: string | unde
   const t0 = Date.now();
   for (const m of [...new Set([...RAPIDOS, model])]) {
     if (restante(t0, budget) < 8000) break;
-    const b = await callGemini(m, [{ text: buildFormatPrompt(prev, notes, texto) }], false, 6144, Math.min(restante(t0, budget), 40000));
+    const b = await callGemini(m, [{ text: buildFormatPrompt(prev, notes, texto) }], false, 6144, Math.min(restante(t0, budget), 40000), true);
     if (!b.res.ok) continue;
     const analysis = splitResponse(readGrounding(b.body, false).text).analysis;
     if (analysis) return { status: b.res.status, model: m, analysis };
@@ -443,7 +461,7 @@ export async function gerarRascunho(fatos: string, budget = BUDGET_MS) {
   const t0 = Date.now();
   for (const m of ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]) {
     if (restante(t0, budget) < 8000) break;
-    const b = await callGemini(m, [{ text: buildDraftPrompt(fatos) }], false, 6144, Math.min(restante(t0, budget), 40000));
+    const b = await callGemini(m, [{ text: buildDraftPrompt(fatos) }], false, 6144, Math.min(restante(t0, budget), 40000), true);
     if (!b.res.ok) continue;
     const texto = readGrounding(b.body, false).text;
     const ini = texto.indexOf("{");
@@ -483,7 +501,7 @@ export async function preencherFicha(fatos: string, campos: unknown[], budget = 
   const t0 = Date.now();
   for (const m of ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]) {
     if (restante(t0, budget) < 8000) break;
-    const b = await callGemini(m, [{ text: buildFichaPrompt(fatos, campos) }], false, 4096, Math.min(restante(t0, budget), 40000));
+    const b = await callGemini(m, [{ text: buildFichaPrompt(fatos, campos) }], false, 4096, Math.min(restante(t0, budget), 40000), true);
     if (!b.res.ok) continue;
     const texto = readGrounding(b.body, false).text;
     const ini = texto.indexOf("[");
@@ -509,7 +527,7 @@ ${linhas.map((l, i) => `${i}: ${l}`).join("\n")}`;
   const t0 = Date.now();
   for (const m of ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]) {
     if (restante(t0, budget) < 8000) break;
-    const b = await callGemini(m, [{ text: prompt }], false, 4096, Math.min(restante(t0, budget), 30000));
+    const b = await callGemini(m, [{ text: prompt }], false, 4096, Math.min(restante(t0, budget), 30000), true);
     if (!b.res.ok) continue;
     const texto = readGrounding(b.body, false).text;
     const ini = texto.indexOf("[");
