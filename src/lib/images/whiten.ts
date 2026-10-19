@@ -53,3 +53,27 @@ export async function composeOnWhite(cutout: Blob, size = 1200, margin = 0.05): 
   bitmap.close();
   return canvasToBlob(canvas, "image/jpeg", 0.92);
 }
+
+/**
+ * Ajusta a "sensibilidade" do recorte (0 a 100; 50 = como o modelo devolveu).
+ * Mais alto mantém mais da peça (partes finas, como prisioneiros e bordas); mais baixo remove mais fundo.
+ * Usa uma curva sobre a transparência (gama): suave e sem efeito no valor padrão.
+ */
+export async function ajustarSensibilidade(cutout: Blob, sensibilidade: number): Promise<Blob> {
+  const s = Math.min(100, Math.max(0, Math.round(sensibilidade)));
+  if (s === 50) return cutout;
+  const gama = Math.pow(2, (50 - s) / 25);
+  const bmp = await createImageBitmap(cutout);
+  const canvas = document.createElement("canvas");
+  canvas.width = bmp.width;
+  canvas.height = bmp.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(bmp, 0, 0);
+  bmp.close();
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const tabela = new Uint8ClampedArray(256);
+  for (let i = 0; i < 256; i++) tabela[i] = Math.round(255 * Math.pow(i / 255, gama));
+  for (let i = 3; i < img.data.length; i += 4) img.data[i] = tabela[img.data[i]];
+  ctx.putImageData(img, 0, 0);
+  return canvasToBlob(canvas, "image/png");
+}

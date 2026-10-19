@@ -1,15 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BUCKET_ORIGINAIS, BUCKET_PROCESSADAS } from "@/domain/types";
 import { browserRemover } from "@/lib/images/remove-background";
-import { composeOnWhite } from "@/lib/images/whiten";
+import { ajustarSensibilidade, composeOnWhite } from "@/lib/images/whiten";
 
 export type Step = (label: string) => void;
 
-async function makeWhite(small: Blob, step?: Step): Promise<Blob> {
+async function makeWhite(small: Blob, step?: Step, sensibilidade = 50): Promise<Blob> {
   step?.("Removendo fundo (a 1ª vez baixa o modelo)");
   const cutout = await browserRemover.remove(small);
   step?.("Recortando e aplicando fundo branco");
-  return composeOnWhite(cutout);
+  return composeOnWhite(await ajustarSensibilidade(cutout, sensibilidade));
 }
 
 /** Envia o original e cria o registro (status "pendente"). A remoção do fundo é feita à parte, por processPending. */
@@ -26,12 +26,12 @@ export async function saveOriginal(supabase: SupabaseClient, p: { userId: string
 /** Gera a versão com fundo branco de uma foto já salva (status "pendente"). Devolve o erro, se houver. */
 export async function processPending(
   supabase: SupabaseClient,
-  p: { userId: string; produtoId: string; fotoId: string; pathOriginal: string; step?: Step },
+  p: { userId: string; produtoId: string; fotoId: string; pathOriginal: string; step?: Step; sensibilidade?: number },
 ) {
   try {
     const { data: original, error } = await supabase.storage.from(BUCKET_ORIGINAIS).download(p.pathOriginal);
     if (error) throw error;
-    const white = await makeWhite(original, p.step);
+    const white = await makeWhite(original, p.step, p.sensibilidade);
     const pathProcessada = `${p.userId}/${p.produtoId}/${crypto.randomUUID()}.jpg`;
     const up = await supabase.storage.from(BUCKET_PROCESSADAS).upload(pathProcessada, white, { contentType: "image/jpeg" });
     if (up.error) throw up.error;
@@ -46,11 +46,11 @@ export async function processPending(
 /** Refaz o fundo branco a partir do original já salvo. */
 export async function reprocessPhoto(
   supabase: SupabaseClient,
-  p: { userId: string; produtoId: string; fotoId: string; pathOriginal: string; pathProcessada: string | null; step?: Step },
+  p: { userId: string; produtoId: string; fotoId: string; pathOriginal: string; pathProcessada: string | null; step?: Step; sensibilidade?: number },
 ) {
   const { data: original, error } = await supabase.storage.from(BUCKET_ORIGINAIS).download(p.pathOriginal);
   if (error) throw error;
-  const white = await makeWhite(original, p.step);
+  const white = await makeWhite(original, p.step, p.sensibilidade);
   const novo = `${p.userId}/${p.produtoId}/${crypto.randomUUID()}.jpg`;
   const up = await supabase.storage.from(BUCKET_PROCESSADAS).upload(novo, white, { contentType: "image/jpeg" });
   if (up.error) throw up.error;

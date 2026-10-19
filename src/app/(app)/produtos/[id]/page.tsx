@@ -24,6 +24,9 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
   const auto = sp.auto === "1";
   const aviso = typeof sp.aviso === "string" ? sp.aviso : "";
   const supabase = await createClient();
+  const { data: authInfo } = await supabase.auth.getUser();
+  const sensConta = Number(authInfo.user?.user_metadata?.limiar_fundo);
+  const sensibilidadeInicial = Number.isFinite(sensConta) ? Math.min(100, Math.max(0, sensConta)) : 50;
 
   const { data: produto } = await supabase
     .from("produtos")
@@ -102,6 +105,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
 
       <Etapa titulo="Fotos" resumo={`${fotos.length} foto(s)`} aberto>
         <ProdutoFotos
+          sensibilidadeInicial={sensibilidadeInicial}
           produtoId={produto.id}
           userId={produto.user_id}
           fotos={fotos.map((f) => ({

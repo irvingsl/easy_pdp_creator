@@ -22,10 +22,19 @@ const STATUS_LABEL = { pendente: "Processando", ok: "Fundo branco pronto", erro:
 const smallBtn =
   "rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800";
 
-export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; userId: string; fotos: FotoView[] }) {
+export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 50 }: { produtoId: string; userId: string; fotos: FotoView[]; sensibilidadeInicial?: number }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null); // texto de progresso
   const [error, setError] = useState("");
+  // Sensibilidade do recorte: guardada na conta (vale para todos os produtos e aparelhos)
+  const [sens, setSens] = useState(sensibilidadeInicial);
+  const [sensMsg, setSensMsg] = useState("");
+  const sensRef = useRef(sensibilidadeInicial);
+  async function salvarSens(v: number) {
+    sensRef.current = v;
+    const { error } = await createClient().auth.updateUser({ data: { limiar_fundo: v } });
+    setSensMsg(error ? "Não consegui salvar na conta" : "Salvo na sua conta ✓");
+  }
   const [zoom, setZoom] = useState<{ src: string; label: string } | null>(null);
 
   useEffect(() => {
@@ -51,7 +60,7 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
           const f = fotos.find((x) => x.id === id);
           if (!f) continue;
           setBusy(`Removendo o fundo da foto ${i + 1} de ${ids.length}...`);
-          const r = await processPending(supabase, { userId, produtoId, fotoId: f.id, pathOriginal: f.pathOriginal, step: (s: string) => setBusy(`Foto ${i + 1} de ${ids.length}: ${s}...`) });
+          const r = await processPending(supabase, { userId, produtoId, fotoId: f.id, pathOriginal: f.pathOriginal, step: (s: string) => setBusy(`Foto ${i + 1} de ${ids.length}: ${s}...`), sensibilidade: sensRef.current });
           if (r.erro) erros.push(`foto ${i + 1}: ${r.erro}`);
           router.refresh();
         }
@@ -127,6 +136,34 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
             />
           </label>
         ))}
+      </div>
+      <div className="flex flex-col gap-1 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
+        <label htmlFor="sens" className="font-medium">
+          Sensibilidade do recorte: {sens} {sens === 50 ? "(padrão)" : ""}
+        </label>
+        <input
+          id="sens"
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={sens}
+          onChange={(e) => {
+            setSens(Number(e.target.value));
+            setSensMsg("");
+          }}
+          onPointerUp={() => salvarSens(sens)}
+          onKeyUp={() => salvarSens(sens)}
+          onBlur={() => sensRef.current !== sens && salvarSens(sens)}
+          className="w-full"
+        />
+        <div className="flex justify-between text-xs text-gray-500">
+          <span>Remove mais fundo</span>
+          <span>Mantém mais da peça</span>
+        </div>
+        <p className="text-xs text-gray-500">
+          Se o recorte comeu partes finas (prisioneiros, bordas), aumente; se sobrou fundo, diminua. Vale para as próximas fotos e para o botão Refazer fundo de cada uma. {sensMsg}
+        </p>
       </div>
       {principal && !elegivel(principal) && (
         <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
@@ -218,6 +255,7 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
                       fotoId: f.id,
                       pathOriginal: f.pathOriginal,
                       pathProcessada: f.pathProcessada,
+                      sensibilidade: sensRef.current,
                       step: (s) => setBusy(`Foto ${i + 1}: ${s}...`),
                     }),
                   )
