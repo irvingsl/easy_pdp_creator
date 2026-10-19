@@ -6,9 +6,10 @@ export type LensMatch = { titulo: string; fonte: string | null; preco: string | 
 
 export const lensAtivo = () => !!process.env.SERPAPI_KEY;
 
-export async function buscaLens(imageUrl: string, timeoutMs = 25000): Promise<{ matches: LensMatch[]; erro?: string } | null> {
+export async function buscaLens(imageUrl: string, timeoutMs = 42000): Promise<{ matches: LensMatch[]; erro?: string; chaves?: string[]; ms?: number } | null> {
   const key = process.env.SERPAPI_KEY;
   if (!key) return null;
+  const t0 = Date.now();
   try {
     const u = new URL("https://serpapi.com/search.json");
     u.searchParams.set("engine", "google_lens");
@@ -21,7 +22,7 @@ export async function buscaLens(imageUrl: string, timeoutMs = 25000): Promise<{ 
       error?: string;
       visual_matches?: { title?: string; source?: string; price?: { value?: string; extracted_value?: number } | string }[];
     } | null;
-    if (!res.ok || body?.error) return { matches: [], erro: body?.error ?? `HTTP ${res.status}` };
+    if (!res.ok || body?.error) return { matches: [], erro: body?.error ?? `HTTP ${res.status}`, chaves: Object.keys(body ?? {}), ms: Date.now() - t0 };
     const matches = (body?.visual_matches ?? [])
       .filter((m) => m.title)
       .slice(0, 10)
@@ -30,9 +31,9 @@ export async function buscaLens(imageUrl: string, timeoutMs = 25000): Promise<{ 
         fonte: m.source ?? null,
         preco: typeof m.price === "string" ? m.price : m.price?.value ?? null,
       }));
-    return { matches };
+    return { matches, chaves: Object.keys(body ?? {}), ms: Date.now() - t0 };
   } catch (e) {
-    return { matches: [], erro: e instanceof Error ? e.message : "falha na busca por imagem" };
+    return { matches: [], erro: e instanceof Error ? e.message : "falha na busca por imagem", ms: Date.now() - t0 };
   }
 }
 

@@ -35,6 +35,24 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
     const { error } = await createClient().auth.updateUser({ data: { limiar_fundo: v } });
     setSensMsg(error ? "Não consegui salvar na conta" : "Salvo na sua conta ✓");
   }
+  // teste forçado da busca por imagem (SerpApi) numa foto
+  const [lensTxt, setLensTxt] = useState<Record<string, string>>({});
+  async function testarLens(id: string) {
+    setLensTxt((p) => ({ ...p, [id]: "Consultando a busca por imagem… (pode levar até ~50 s)" }));
+    try {
+      const res = await fetch("/api/lens", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fotoId: id }) });
+      const t = await res.text();
+      let out = t;
+      try {
+        out = JSON.stringify(JSON.parse(t), null, 2);
+      } catch {
+        out = res.status === 504 ? "Demorou demais (504)." : `Resposta inesperada (${res.status}): ${t.slice(0, 300)}`;
+      }
+      setLensTxt((p) => ({ ...p, [id]: out }));
+    } catch (e) {
+      setLensTxt((p) => ({ ...p, [id]: e instanceof Error ? e.message : "falha" }));
+    }
+  }
   const [zoom, setZoom] = useState<{ src: string; label: string } | null>(null);
 
   useEffect(() => {
@@ -274,6 +292,9 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
                   Buscar no Google Lens
                 </a>
               )}
+              <button type="button" className={smallBtn} onClick={() => testarLens(f.id)}>
+                Testar busca por imagem (SerpApi)
+              </button>
               <button
                 type="button"
                 disabled={disabled}
@@ -288,6 +309,7 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
                 Excluir foto
               </button>
             </div>
+            {lensTxt[f.id] && <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs dark:bg-gray-900">{lensTxt[f.id]}</pre>}
           </li>
           ),
         )}
