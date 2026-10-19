@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BUCKET_ORIGINAIS, BUCKET_PROCESSADAS } from "@/domain/types";
 import { browserRemover } from "@/lib/images/remove-background";
-import { ajustarSensibilidade, composeOnWhite } from "@/lib/images/whiten";
+import { ajustarSensibilidade, composeOnWhite, recuperarPartesFinas } from "@/lib/images/whiten";
 
 export type Step = (label: string) => void;
 
@@ -9,7 +9,8 @@ async function makeWhite(small: Blob, step?: Step, sensibilidade = 50): Promise<
   step?.("Removendo fundo (a 1ª vez baixa o modelo)");
   const cutout = await browserRemover.remove(small);
   step?.("Recortando e aplicando fundo branco");
-  return composeOnWhite(await ajustarSensibilidade(cutout, sensibilidade));
+  const recuperado = await recuperarPartesFinas(small, cutout, sensibilidade);
+  return composeOnWhite(await ajustarSensibilidade(recuperado, sensibilidade));
 }
 
 /** Envia o original e cria o registro (status "pendente"). A remoção do fundo é feita à parte, por processPending. */

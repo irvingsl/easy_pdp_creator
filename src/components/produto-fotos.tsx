@@ -162,7 +162,7 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
           <span>Mantém mais da peça</span>
         </div>
         <p className="text-xs text-gray-500">
-          Se o recorte comeu partes finas (prisioneiros, bordas), aumente; se sobrou fundo, diminua. Vale para as próximas fotos e para o botão Refazer fundo de cada uma. {sensMsg}
+          Se o recorte comeu partes finas (prisioneiros, bordas), aumente: acima de 50 o app também recupera o que tem cor diferente do fundo, perto da peça. Se sobrou fundo, diminua. Vale para as próximas fotos e para o botão Refazer fundo de cada uma. {sensMsg}
         </p>
       </div>
       {principal && !elegivel(principal) && (
