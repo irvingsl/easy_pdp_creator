@@ -243,7 +243,7 @@ async function tratar(request: NextRequest) {
       } catch {
         /* o catálogo é um complemento: se falhar, segue só com a web */
       }
-      if (lens?.matches.length) textoFinal += `\n\n${textoLens(lens.matches)}`;
+      if (lens?.matches.length || lens?.overview) textoFinal += `\n\n${textoLens(lens.matches, lens.overview)}`;
       const out: Parcial = {
         ...parcial,
         textoPesquisa: textoFinal,
