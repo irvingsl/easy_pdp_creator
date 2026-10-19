@@ -128,6 +128,24 @@ export function ProdutoFotos({ produtoId, userId, fotos }: { produtoId: string; 
           </label>
         ))}
       </div>
+      {fotos.some((f) => f.status !== "pendente" && !f.manterOriginal) && (
+        <button
+          type="button"
+          disabled={disabled}
+          className={`${btnSecondary} self-start !py-2 text-sm`}
+          onClick={() =>
+            run("Refazendo o fundo de todas", async () => {
+              const supabase = createClient();
+              const alvo = fotos.filter((f) => f.status !== "pendente" && !f.manterOriginal);
+              for (const [i, f] of alvo.entries()) {
+                await reprocessPhoto(supabase, { userId, produtoId, fotoId: f.id, pathOriginal: f.pathOriginal, pathProcessada: f.pathProcessada, step: (st) => setBusy(`Foto ${i + 1} de ${alvo.length}: ${st}...`) });
+              }
+            })
+          }
+        >
+          Refazer o fundo de todas as fotos
+        </button>
+      )}
       {principal && !elegivel(principal) && (
         <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
           A foto principal está com a original (sem fundo branco). O Mercado Livre exige fundo branco na primeira foto: escolha outra como principal ou volte ao fundo branco.

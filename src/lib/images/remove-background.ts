@@ -11,10 +11,8 @@ const isMobile = () => typeof navigator !== "undefined" && /Android|iPhone|iPad|
 /** Modelo menor e processamento na CPU: usa bem menos memória (celulares costumam falhar com o padrão). */
 const LEVE: Config = { model: "isnet_quint8", device: "cpu" };
 const PADRAO: Config = { device: "cpu" };
-/** Placa de vídeo (WebGPU): várias vezes mais rápido onde o navegador permite; cai para a CPU se falhar. */
-const GPU: Config = { model: "isnet_fp16", device: "gpu" };
-
-const CHAVE = "bgConfig";
+// chave nova: descarta a configuração (WebGPU) que ficou gravada e produzia máscaras estragadas
+const CHAVE = "bgConfig2";
 const marcarTentativa = (i: number | null) => {
   try {
     if (i == null) window.localStorage.removeItem("bgTentando");
@@ -44,7 +42,7 @@ const lembrar = (i: number) => {
  * O navegador reaproveita o modelo já baixado (cache), então só a primeira vez na vida do aparelho baixa de verdade.
  */
 function tentativas(): Config[] {
-  const base = isMobile() ? [GPU, LEVE, PADRAO] : [GPU, PADRAO, LEVE];
+  const base = isMobile() ? [LEVE, PADRAO] : [PADRAO, LEVE];
   // se a última tentativa de uma configuração nem terminou (aba travou/fechou por falta de memória), ela vai para o fim
   let travada: number | null = null;
   try {
@@ -62,7 +60,7 @@ function tentativas(): Config[] {
   if (travada != null && base[travada]) ordem = [...ordem.filter((j) => j !== travada), travada];
   return ordem.map((j) => base[j]);
 }
-const indiceBase = (c: Config) => (isMobile() ? [GPU, LEVE, PADRAO] : [GPU, PADRAO, LEVE]).indexOf(c);
+const indiceBase = (c: Config) => (isMobile() ? [LEVE, PADRAO] : [PADRAO, LEVE]).indexOf(c);
 
 /** Mesma configuração em toda chamada: a biblioteca guarda a sessão do modelo e só a 1ª foto paga a inicialização. */
 const completa = (config: Config) => ({
@@ -71,6 +69,26 @@ const completa = (config: Config) => ({
   fetchArgs: { cache: "force-cache" },
   output: { format: "image/png" as const },
 });
+
+/** O recorte parece válido? Uma máscara estragada deixa quase nada opaco (ou tudo). */
+async function recorteValido(png: Blob): Promise<boolean> {
+  try {
+    const bmp = await createImageBitmap(png);
+    const lado = 96;
+    const c = document.createElement("canvas");
+    c.width = c.height = lado;
+    const ctx = c.getContext("2d", { willReadFrequently: true })!;
+    ctx.drawImage(bmp, 0, 0, lado, lado);
+    bmp.close();
+    const { data } = ctx.getImageData(0, 0, lado, lado);
+    let opacos = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 200) opacos++;
+    const razao = opacos / (lado * lado);
+    return razao > 0.05 && razao < 0.995;
+  } catch {
+    return true; // não conseguiu checar: não bloqueia
+  }
+}
 
 /** Gratuito: roda no navegador (WASM/WebGPU). O modelo é baixado na 1ª vez e fica em cache. */
 export const browserRemover: BackgroundRemover = {
@@ -81,6 +99,7 @@ export const browserRemover: BackgroundRemover = {
       try {
         marcarTentativa(indiceBase(config));
         const r = await removeBackground(image, completa(config));
+        if (!(await recorteValido(r))) throw new Error("o recorte saiu vazio ou estragado");
         marcarTentativa(null);
         lembrar(indiceBase(config));
         return r;
