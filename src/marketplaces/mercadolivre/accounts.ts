@@ -33,11 +33,13 @@ export async function getAccount(supabase: SupabaseClient) {
 }
 
 /** Devolve um access token válido, renovando com o refresh token se estiver perto de expirar. */
-export async function getAccessToken(supabase: SupabaseClient): Promise<string | null> {
-  const { data: row } = await supabase
+export async function getAccessToken(supabase: SupabaseClient, userId?: string): Promise<string | null> {
+  let q = supabase
     .from("contas_marketplace")
     .select("id, tokens_criptografados, expira_em")
-    .eq("marketplace", MARKETPLACE)
+    .eq("marketplace", MARKETPLACE);
+  if (userId) q = q.eq("user_id", userId); // com a chave de servidor não há RLS: filtra pelo dono
+  const { data: row } = await q
     .order("criado_em", { ascending: false })
     .limit(1)
     .maybeSingle();

@@ -14,6 +14,7 @@ import { AnuncioSegundaOpcao } from "@/components/anuncio-segunda-opcao";
 import { AnuncioCompat } from "@/components/anuncio-compat";
 import { AnuncioQualidade } from "@/components/anuncio-qualidade";
 import { DadosConfirmadosForm } from "@/components/dados-confirmados";
+import { FilaStatus } from "@/components/fila-painel";
 import { RascunhoAnuncio } from "@/components/rascunho-anuncio";
 import type { Rascunho } from "@/domain/rascunho";
 import type { DadosConfirmados } from "@/domain/dados-confirmados";
@@ -30,7 +31,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
 
   const { data: produto } = await supabase
     .from("produtos")
-    .select("id, user_id, sku, identificacao, rascunho, dados_confirmados, oem_code, titulo_base, estoque, status, criado_em, produto_fotos(id, path_original, path_processada, status_processamento, ordem, manter_original)")
+    .select("id, user_id, sku, fila_etapa, fila_passo, fila_erro, identificacao, rascunho, dados_confirmados, oem_code, titulo_base, estoque, status, criado_em, produto_fotos(id, path_original, path_processada, status_processamento, ordem, manter_original)")
     .eq("id", id)
     .maybeSingle();
   if (!produto) notFound();
@@ -100,6 +101,8 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
         </p>
         <div className="mt-2"><EstoqueProduto key={produto.estoque} produtoId={produto.id} estoque={produto.estoque} /></div>
       </div>
+
+      <FilaStatus etapa={produto.fila_etapa} passo={produto.fila_passo} erro={produto.fila_erro} produtoId={produto.id} />
 
       {aviso && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">{aviso}</p>}
 

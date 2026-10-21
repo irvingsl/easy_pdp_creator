@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
 import { saveOriginal } from "@/lib/photos";
 import { aquecerModelo } from "@/lib/images/remove-background";
+import { dispararFila } from "./fila-painel";
 import { btnPrimary, btnSecondary, inputBase } from "./ui";
 
 type Progress = { done: number; total: number; step: string };
@@ -87,8 +88,11 @@ export function NovoProdutoForm() {
           setProgress({ done: enviadas, total: smalls.length, step: "Enviando fotos" });
         }),
       );
-      const aviso = skipped.length ? `&aviso=${encodeURIComponent(`Não consegui abrir: ${skipped.join("; ")}`)}` : "";
-      router.push(`/produtos/${produto.id}?auto=1${aviso}`);
+      // entra na fila: o servidor identifica e monta o rascunho sozinho, mesmo com o app fechado
+      await supabase.from("produtos").update({ fila_etapa: "identificar", fila_passo: null, fila_erro: null, fila_atualizado_em: new Date().toISOString() }).eq("id", produto.id);
+      await dispararFila(2);
+      if (skipped.length) alert(`Não consegui abrir: ${skipped.join("; ")}`);
+      router.push("/produtos");
       router.refresh();
     } catch (err) {
       // Não deixa um produto vazio para trás se nenhuma foto chegou a ser salva

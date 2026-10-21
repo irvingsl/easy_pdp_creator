@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { contextoDaRequisicao } from "@/lib/supabase/request";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { identifyPart, organizarPesquisa, pesquisaWeb, type PartAnalysis } from "@/lib/gemini";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
 import { buscarPorPalavras, lookupPartNumber, modeloDoCatalogo, type CatalogHit, type ModeloCatalogo } from "@/marketplaces/mercadolivre/catalog";
@@ -19,12 +20,13 @@ const keyword = (tipo: string | null) => norm(tipo ?? "").split(/[^a-z0-9]+/).fi
 const alnumN = (t?: string | null) => (t ?? "").replace(/[^0-9a-z]/gi, "").toLowerCase();
 
 /** Pesquisa já feita para o mesmo número de peça em outro produto do vendedor: evita pagar de novo por busca e organização. */
-async function pesquisaAnterior(supabase: Awaited<ReturnType<typeof createClient>>, produtoId: string, a: PartAnalysis): Promise<PartAnalysis | null> {
+async function pesquisaAnterior(supabase: SupabaseClient, userId: string, produtoId: string, a: PartAnalysis): Promise<PartAnalysis | null> {
   const num = alnumN(a.numero_peca_principal);
   if (num.length < 6) return null;
   const { data } = await supabase
     .from("produtos")
     .select("id, analysis:identificacao->analysis, web:identificacao->buscaWeb")
+    .eq("user_id", userId)
     .neq("id", produtoId)
     .not("identificacao", "is", null)
     .order("identificado_em", { ascending: false })
@@ -113,14 +115,14 @@ async function tratar(request: NextRequest) {
   };
   if (!produtoId) return NextResponse.json({ error: "produtoId obrigatório" }, { status: 400 });
 
-  const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
+  const { supabase, userId } = await contextoDaRequisicao(request);
+  if (!userId) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
 
   const { data: produto } = await supabase
     .from("produtos")
     .select("id, oem_code, dados_confirmados, produto_fotos(id, path_original, ordem)")
     .eq("id", produtoId)
+    .eq("user_id", userId)
     .maybeSingle();
   if (!produto) return NextResponse.json({ error: "produto não encontrado" }, { status: 404 });
 
@@ -173,7 +175,7 @@ async function tratar(request: NextRequest) {
     if (etapa === "pesquisa") {
       if (!forcar && !cego) {
         // 1) o mesmo número de peça já foi pesquisado em outro produto
-        const ant = await pesquisaAnterior(supabase, produtoId, parcial.analysis);
+        const ant = await pesquisaAnterior(supabase, userId, produtoId, parcial.analysis);
         if (ant) {
           const out: Parcial = {
             ...parcial,
@@ -187,7 +189,7 @@ async function tratar(request: NextRequest) {
         }
         // 2) o catálogo do ML já reconhece o número (e é o mesmo tipo de peça): dispensa a busca na web
         const code = parcial.analysis.numero_peca_principal;
-        const token = code && significant(code) ? await getAccessToken(supabase) : null;
+        const token = code && significant(code) ? await getAccessToken(supabase, userId) : null;
         if (token && code) {
           const hit = await lookupPartNumber(token, code);
           const kw = keyword(parcial.analysis.tipo_item);
@@ -252,7 +254,7 @@ async function tratar(request: NextRequest) {
       // Produtos parecidos no catálogo do ML (gratuito): nomes com veículo e código ajudam quando a web não achou
       let textoFinal = r.texto;
       try {
-        const token = await getAccessToken(supabase);
+        const token = await getAccessToken(supabase, userId);
         const an = parcial.analysis;
         const marca = (cego ? null : (produto.dados_confirmados as DadosConfirmados | null)?.marca) || an.marca?.valor;
         const codigo = an.numero_peca_principal;
@@ -341,7 +343,7 @@ async function tratar(request: NextRequest) {
       ),
     ].slice(0, 8);
     let catalog: CatalogHit[] = [];
-    const token = await getAccessToken(supabase);
+    const token = await getAccessToken(supabase, userId);
     if (token) catalog = await Promise.all(codes.map((c) => lookupPartNumber(token, c)));
 
     // Só vale o que o ML reconhece como número de peça E é do mesmo tipo de peça
@@ -381,11 +383,11 @@ async function tratar(request: NextRequest) {
       pesquisaDispensada: p.pesquisaDispensada,
       geradoEm: new Date().toISOString(),
     };
-    await supabase.from("produtos").update({ identificacao: result, identificado_em: result.geradoEm }).eq("id", produtoId);
+    await supabase.from("produtos").update({ identificacao: result, identificado_em: result.geradoEm }).eq("id", produtoId).eq("user_id", userId);
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "falha" }, { status: 500 });
   } finally {
-    await gravarUso(supabase, produtoId, `identificar:${etapa}`).catch(() => {});
+    await gravarUso(supabase, produtoId, `identificar:${etapa}`, userId).catch(() => {});
   }
 }

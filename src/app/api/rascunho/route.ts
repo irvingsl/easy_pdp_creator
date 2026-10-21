@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { contextoDaRequisicao } from "@/lib/supabase/request";
 import { gerarRascunho } from "@/lib/gemini";
 import { fatosDoProduto, type Identificacao } from "@/lib/fatos";
 import type { DadosConfirmados } from "@/domain/dados-confirmados";
@@ -15,11 +15,10 @@ async function tratar(request: NextRequest) {
   const { produtoId, forcar } = (await request.json().catch(() => ({}))) as { produtoId?: string; forcar?: boolean };
   if (!produtoId) return NextResponse.json({ error: "produtoId obrigatório" }, { status: 400 });
 
-  const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
+  const { supabase, userId } = await contextoDaRequisicao(request);
+  if (!userId) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
 
-  const { data: produto } = await supabase.from("produtos").select("id, oem_code, dados_confirmados, identificacao, rascunho").eq("id", produtoId).maybeSingle();
+  const { data: produto } = await supabase.from("produtos").select("id, oem_code, dados_confirmados, identificacao, rascunho").eq("id", produtoId).eq("user_id", userId).maybeSingle();
   if (!produto) return NextResponse.json({ error: "produto não encontrado" }, { status: 404 });
 
   const analysis = (produto.identificacao as Identificacao | null)?.analysis;
@@ -32,7 +31,7 @@ async function tratar(request: NextRequest) {
   if (!forcar && existente?.titulo && existente.fatos_hash === hash) return NextResponse.json({ rascunho: existente, reaproveitado: true });
 
   const r = await gerarRascunho(fatos);
-  await gravarUso(supabase, produtoId, "rascunho").catch(() => {});
+  await gravarUso(supabase, produtoId, "rascunho", userId).catch(() => {});
   if (!r.rascunho) return NextResponse.json({ error: "A IA não devolveu um rascunho válido, tente de novo" }, { status: 502 });
 
   const x = r.rascunho as Partial<Rascunho>;

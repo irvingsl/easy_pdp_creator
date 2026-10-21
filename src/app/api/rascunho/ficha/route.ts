@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { contextoDaRequisicao } from "@/lib/supabase/request";
 import { preencherFicha } from "@/lib/gemini";
 import { fatosDoProduto, type Identificacao } from "@/lib/fatos";
 import { gravarUso, usoStore } from "@/lib/uso";
@@ -17,13 +17,12 @@ export const POST = (request: NextRequest) => usoStore.run([], () => tratar(requ
 async function tratar(request: NextRequest) {
   const { produtoId, forcar } = (await request.json().catch(() => ({}))) as { produtoId?: string; forcar?: boolean };
   if (!produtoId) return NextResponse.json({ error: "produtoId obrigatório" }, { status: 400 });
-  const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
-  const token = await getAccessToken(supabase);
+  const { supabase, userId } = await contextoDaRequisicao(request);
+  if (!userId) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
+  const token = await getAccessToken(supabase, userId);
   if (!token) return NextResponse.json({ error: "conta do Mercado Livre não conectada" }, { status: 400 });
 
-  const { data: produto } = await supabase.from("produtos").select("id, oem_code, dados_confirmados, identificacao, rascunho").eq("id", produtoId).maybeSingle();
+  const { data: produto } = await supabase.from("produtos").select("id, oem_code, dados_confirmados, identificacao, rascunho").eq("id", produtoId).eq("user_id", userId).maybeSingle();
   const r = produto?.rascunho as Rascunho | null;
   if (!produto || !r?.categoria_id) return NextResponse.json({ error: "escolha a categoria e salve o rascunho antes" }, { status: 400 });
 
@@ -37,7 +36,7 @@ async function tratar(request: NextRequest) {
     const hash = hashTexto(`${r.categoria_id}|${entrada}|${campos.map((c) => c.id).join(",")}`);
     if (!forcar && r.ficha?.length && r.ficha_hash === hash) return NextResponse.json({ ficha: r.ficha, reaproveitado: true });
     const ia = await preencherFicha(entrada, campos);
-    await gravarUso(supabase, produtoId, "ficha").catch(() => {});
+    await gravarUso(supabase, produtoId, "ficha", userId).catch(() => {});
     if (!ia.itens) return NextResponse.json({ error: "A IA não devolveu a ficha, tente de novo" }, { status: 502 });
 
     // mantém o que o vendedor já digitou; o resto vem da IA
