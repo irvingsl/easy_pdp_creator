@@ -185,17 +185,17 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
       )}
       <div className="flex flex-col gap-1 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
         <label htmlFor="sens" className="font-medium">
-          Sensibilidade do recorte: {sens} {sens === 50 ? "(padrão)" : ""}
+          Sensibilidade do recorte: {sens / 10} {sens === 50 ? "(padrão)" : ""}
         </label>
         <input
           id="sens"
           type="range"
           min={0}
-          max={100}
-          step={5}
-          value={sens}
+          max={10}
+          step={1}
+          value={sens / 10}
           onChange={(e) => {
-            setSens(Number(e.target.value));
+            setSens(Number(e.target.value) * 10); // na tela é de 0 a 10; guardado de 0 a 100
             setSensMsg("");
           }}
           onPointerUp={() => salvarSens(sens)}
@@ -208,7 +208,7 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
           <span>Mantém mais da peça</span>
         </div>
         <p className="text-xs text-gray-500">
-          Se o recorte comeu partes finas (prisioneiros, bordas), aumente: acima de 50 o app também recupera o que tem cor diferente do fundo, perto da peça. Se sobrou fundo, diminua. Vale para as próximas fotos e para o botão Refazer fundo de cada uma. {sensMsg}
+          Se o recorte comeu partes finas (prisioneiros, bordas), aumente: acima de 5 o app também recupera o que tem cor diferente do fundo, perto da peça. Se sobrou fundo, diminua. Vale para as próximas fotos e para o botão Refazer fundo de cada uma. {sensMsg}
         </p>
       </div>
       {principal && !elegivel(principal) && (

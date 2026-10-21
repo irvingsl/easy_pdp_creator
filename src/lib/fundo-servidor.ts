@@ -24,7 +24,7 @@ async function versaoDoModelo(cabecalho: Record<string, string>): Promise<string
 
 type Resultado = { jpeg: Blob; area: number };
 
-async function viaReplicate(original: Blob, timeoutMs: number): Promise<Resultado> {
+async function viaReplicate(original: Blob, sensibilidade: number, timeoutMs: number): Promise<Resultado> {
   const token = process.env.REPLICATE_API_TOKEN!;
   const cabecalho = { authorization: `Bearer ${token}`, "content-type": "application/json" };
   const dataUri = `data:image/jpeg;base64,${Buffer.from(await original.arrayBuffer()).toString("base64")}`;
@@ -47,11 +47,18 @@ async function viaReplicate(original: Blob, timeoutMs: number): Promise<Resultad
   const url = Array.isArray(p.output) ? p.output[0] : p.output;
   if (!url) throw new Error("Replicate: sem imagem na resposta");
   const png = Buffer.from(await (await fetch(url, { signal: AbortSignal.timeout(20000) })).arrayBuffer());
-  const alfa = await sharp(png).ensureAlpha().extractChannel(3).raw().toBuffer();
+  // A sensibilidade ajusta a transparência das bordas do recorte do modelo (mesma curva do Space):
+  // alta mantém mais do que o modelo deixou semitransparente; baixa limpa mais a borda. Parte que o modelo apagou por completo não volta.
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const limiar = 0.5 - (0.4 * (Math.max(0, Math.min(100, sensibilidade)) - 50)) / 50;
   let opacos = 0;
-  for (const v of alfa) if (v > 127) opacos++;
-  const jpeg = await sharp(png).flatten({ background: "#ffffff" }).jpeg({ quality: 92 }).toBuffer();
-  return { jpeg: new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), area: alfa.length ? opacos / alfa.length : 1 };
+  for (let i = 3; i < data.length; i += 4) {
+    const a = Math.max(0, Math.min(1, (data[i] / 255 - limiar) / 0.2 + 0.5));
+    data[i] = Math.round(a * 255);
+    if (a > 0.5) opacos++;
+  }
+  const jpeg = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).flatten({ background: "#ffffff" }).jpeg({ quality: 92 }).toBuffer();
+  return { jpeg: new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), area: opacos / (info.width * info.height || 1) };
 }
 
 async function viaSpace(original: Blob, sensibilidade: number, timeoutMs: number): Promise<Resultado> {
@@ -71,4 +78,4 @@ async function viaSpace(original: Blob, sensibilidade: number, timeoutMs: number
 
 /** Devolve o JPEG já com fundo branco e a fração da imagem que ficou como peça (para detectar recorte vazio). */
 export const removerFundoNoServidor = (original: Blob, sensibilidade: number, timeoutMs = 50000): Promise<Resultado> =>
-  process.env.REPLICATE_API_TOKEN ? viaReplicate(original, timeoutMs) : viaSpace(original, sensibilidade, timeoutMs);
+  process.env.REPLICATE_API_TOKEN ? viaReplicate(original, sensibilidade, timeoutMs) : viaSpace(original, sensibilidade, timeoutMs);
