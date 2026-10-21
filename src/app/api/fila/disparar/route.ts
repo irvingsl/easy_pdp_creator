@@ -17,6 +17,8 @@ export async function POST(request: NextRequest) {
   if (!process.env.SUPABASE_SECRET_KEY) return NextResponse.json({ error: "falta SUPABASE_SECRET_KEY no servidor" }, { status: 500 });
   const { cadeias = 1 } = (await request.json().catch(() => ({}))) as { cadeias?: number };
   const origem = request.nextUrl.origin;
+  // o vigia do banco precisa saber o endereço do app: guarda o último usado
+  await adminClient().from("fila_config").upsert({ chave: "origem", valor: origem }).then(() => {}, () => {});
 
   const proxima = () =>
     fetch(`${origem}/api/fila/disparar`, {

@@ -5,7 +5,8 @@ const PUBLIC_PATHS = ["/login"];
 
 export async function updateSession(request: NextRequest) {
   // chamada interna da fila: não tem cookies; a própria rota confere a assinatura
-  if (request.nextUrl.pathname === "/api/fila/disparar" && request.headers.has("x-fila-sig")) return NextResponse.next({ request });
+  const p = request.nextUrl.pathname;
+  if ((p === "/api/fila/disparar" && request.headers.has("x-fila-sig")) || (p === "/api/fila/retomar" && request.headers.has("x-fila-cron"))) return NextResponse.next({ request });
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(

@@ -60,8 +60,9 @@ export function FilaPainel({ itens, userId, sensibilidade }: { itens: ItemFila[]
 
   // fundo das fotos pendentes, uma de cada vez
   const processando = useRef(false);
+  const [pedido, setPedido] = useState(false);
   useEffect(() => {
-    if (!pendentesKey || processando.current) return;
+    if (!pedido || !pendentesKey || processando.current) return;
     processando.current = true;
     (async () => {
       const supabase = createClient();
@@ -75,18 +76,24 @@ export function FilaPainel({ itens, userId, sensibilidade }: { itens: ItemFila[]
         }
       } finally {
         processando.current = false;
+        setPedido(false);
         setFundo("");
         setErroFundo(erros.length ? `Não consegui remover o fundo de ${erros.length} foto(s): ${erros[0]}` : "");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendentesKey]);
+  }, [pendentesKey, pedido]);
 
-  if (!trabalhando && !fundo && !erroFundo) return null;
+  if (!trabalhando && !fundo && !erroFundo && !pendentes.length) return null;
   return (
     <div className="mb-4 flex flex-col gap-1 rounded-lg bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-200">
       {trabalhando > 0 && <p>O servidor está processando {trabalhando} produto(s). Você pode sair desta tela: o trabalho continua.</p>}
-      {fundo && <p>{fundo} (isso roda neste aparelho; deixe a tela aberta.)</p>}
+      {fundo && <p>{fundo} (roda neste aparelho e pode deixar a tela lenta; deixe-a aberta.)</p>}
+      {!fundo && pendentes.length > 0 && (
+        <button onClick={() => setPedido(true)} className="self-start rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-50 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
+          Remover o fundo de {pendentes.length} foto(s) agora
+        </button>
+      )}
       {erroFundo && <p className="text-red-700 dark:text-red-300">{erroFundo}</p>}
     </div>
   );
