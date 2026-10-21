@@ -108,6 +108,7 @@ export default async function ProdutoPage(props: PageProps<"/produtos/[id]">) {
 
       <Etapa titulo="Fotos" resumo={`${fotos.length} foto(s)`} aberto>
         <ProdutoFotos
+          servidorTrabalhando={produto.fila_etapa === "identificar" || produto.fila_etapa === "rascunho"}
           sensibilidadeInicial={sensibilidadeInicial}
           fotoBuscaInicial={(produto.dados_confirmados as DadosConfirmados | null)?.foto_busca ?? null}
           produtoId={produto.id}

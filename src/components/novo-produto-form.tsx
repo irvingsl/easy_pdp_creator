@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
 import { saveOriginal } from "@/lib/photos";
-import { aquecerModelo } from "@/lib/images/remove-background";
 import { dispararFila } from "./fila-painel";
 import { btnPrimary, btnSecondary, inputBase } from "./ui";
 
@@ -22,11 +21,6 @@ export function NovoProdutoForm() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-
-  // começa a baixar/iniciar o modelo de remoção de fundo enquanto o vendedor escolhe as fotos
-  useEffect(() => {
-    aquecerModelo();
-  }, []);
 
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);

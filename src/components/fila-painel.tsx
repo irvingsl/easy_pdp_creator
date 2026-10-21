@@ -126,6 +126,9 @@ export function BotaoTentarDeNovo({ produtoId, passo }: { produtoId: string; pas
 }
 
 /** Faixa na página do produto enquanto o servidor ainda trabalha nele: atualiza sozinha. */
+export const rotuloDoEstado = (etapa: string | null, passo: string | null) =>
+  etapa === "rascunho" && passo === "fundo" ? "Removendo o fundo das fotos…" : etapa ? ESTADO[etapa]?.rotulo ?? etapa : "";
+
 export function FilaStatus({ etapa, passo, erro, produtoId }: { etapa: string | null; passo: string | null; erro: string | null; produtoId: string }) {
   const router = useRouter();
   const ativo = etapa === "identificar" || etapa === "rascunho";
@@ -138,7 +141,7 @@ export function FilaStatus({ etapa, passo, erro, produtoId }: { etapa: string | 
   const e = ESTADO[etapa];
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
-      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${e?.cor ?? ""}`}>{e?.rotulo ?? etapa}</span>
+      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${e?.cor ?? ""}`}>{rotuloDoEstado(etapa, passo)}</span>
       {ativo && <span className="text-gray-500">O servidor está trabalhando neste produto; esta página atualiza sozinha.</span>}
       {etapa === "erro" && <BotaoTentarDeNovo produtoId={produtoId} passo={passo} />}
       {erro && <span className="break-words text-xs text-amber-700 dark:text-amber-400">{erro}</span>}

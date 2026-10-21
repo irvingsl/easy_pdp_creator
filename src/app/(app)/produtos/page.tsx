@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BUCKET_PROCESSADAS } from "@/domain/types";
-import { BotaoTentarDeNovo, ESTADO, FilaPainel, type ItemFila } from "@/components/fila-painel";
+import { BotaoTentarDeNovo, ESTADO, FilaPainel, rotuloDoEstado, type ItemFila } from "@/components/fila-painel";
 
 export default async function ProdutosPage() {
   const supabase = await createClient();
@@ -51,7 +51,7 @@ export default async function ProdutosPage() {
                 )}
                 <div className="flex flex-col gap-1 p-2 text-sm">
                   <div className="font-mono">{p.sku}</div>
-                  {estado && <span className={`self-start rounded-full px-2 py-0.5 text-xs font-medium ${estado.cor}`}>{estado.rotulo}</span>}
+                  {estado && <span className={`self-start rounded-full px-2 py-0.5 text-xs font-medium ${estado.cor}`}>{rotuloDoEstado(p.fila_etapa, p.fila_passo)}</span>}
                   {p.fila_etapa === "erro" && <BotaoTentarDeNovo produtoId={p.id} passo={p.fila_passo} />}
                   {p.fila_erro && <span className="break-words text-xs text-amber-700 dark:text-amber-400">{p.fila_erro}</span>}
                   <div className="text-gray-500">

@@ -22,7 +22,7 @@ const STATUS_LABEL = { pendente: "Processando", ok: "Fundo branco pronto", erro:
 const smallBtn =
   "rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800";
 
-export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 50, fotoBuscaInicial = null }: { produtoId: string; userId: string; fotos: FotoView[]; sensibilidadeInicial?: number; fotoBuscaInicial?: string | null }) {
+export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 50, fotoBuscaInicial = null, servidorTrabalhando = false }: { servidorTrabalhando?: boolean; produtoId: string; userId: string; fotos: FotoView[]; sensibilidadeInicial?: number; fotoBuscaInicial?: string | null }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null); // texto de progresso
   const [error, setError] = useState("");
@@ -75,9 +75,10 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
   // Remove o fundo das fotos pendentes, uma de cada vez, assim que a página abre (ou quando entram fotos novas).
   // Se o vendedor sair antes de terminar, o resto continua na próxima visita.
   const processando = useRef(false);
+  const [pedidoFundo, setPedidoFundo] = useState(false);
   const pendentesKey = fotos.filter((f) => f.status === "pendente").map((f) => f.id).join(",");
   useEffect(() => {
-    if (!pendentesKey || processando.current) return;
+    if (!pedidoFundo || servidorTrabalhando || !pendentesKey || processando.current) return;
     processando.current = true;
     const ids = pendentesKey.split(",");
     (async () => {
@@ -94,13 +95,14 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
         }
       } finally {
         processando.current = false;
+        setPedidoFundo(false);
         setBusy(null);
         if (erros.length) setError(`Não consegui remover o fundo de ${erros.length} foto(s) (${erros.join("; ")}). Use "Refazer fundo".`);
         router.refresh();
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendentesKey]);
+  }, [pendentesKey, pedidoFundo]);
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label);
@@ -167,6 +169,20 @@ export function ProdutoFotos({ produtoId, userId, fotos, sensibilidadeInicial = 
           </label>
         ))}
       </div>
+      {pendentesKey && !busy && (
+        <div className="flex flex-col gap-1 rounded-lg bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-200">
+          {servidorTrabalhando ? (
+            <p>O servidor está trabalhando neste produto, inclusive no fundo das fotos. Esta página atualiza sozinha.</p>
+          ) : (
+            <>
+              <p>{pendentesKey.split(",").length} foto(s) ainda com o fundo original.</p>
+              <button onClick={() => setPedidoFundo(true)} className="self-start rounded-md border border-blue-300 bg-white px-3 py-1.5 font-medium hover:bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+                Remover o fundo neste aparelho (pode deixar a tela lenta)
+              </button>
+            </>
+          )}
+        </div>
+      )}
       <div className="flex flex-col gap-1 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
         <label htmlFor="sens" className="font-medium">
           Sensibilidade do recorte: {sens} {sens === 50 ? "(padrão)" : ""}
