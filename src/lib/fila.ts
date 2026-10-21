@@ -188,6 +188,8 @@ async function passoFundo(admin: SupabaseClient, userId: string, produtoId: stri
     if (up.error) throw up.error;
     // recorte que sobrou quase vazio costuma ser erro do modelo: marca para o vendedor decidir (manter original)
     await admin.from("produto_fotos").update({ path_processada: path, status_processamento: "ok", manter_original: false }).eq("id", foto.id);
+    // espaça os pedidos: contas com pouco crédito no Replicate aceitam 6 por minuto
+    await new Promise((ok) => setTimeout(ok, 8000));
     await salvar({ fila_passo: "fundo", fila_erro: area < 0.03 ? "Uma foto ficou quase vazia depois do recorte: confira e, se preciso, use o original." : null });
   } catch (e) {
     // não derruba o produto: a foto fica com erro e o vendedor pode refazer na página dele

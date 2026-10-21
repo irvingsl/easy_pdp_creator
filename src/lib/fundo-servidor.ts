@@ -30,13 +30,21 @@ async function viaReplicate(original: Blob, sensibilidade: number, timeoutMs: nu
   const dataUri = `data:image/jpeg;base64,${Buffer.from(await original.arrayBuffer()).toString("base64")}`;
   const ini = Date.now();
   const version = await versaoDoModelo(cabecalho);
-  let r = await fetch("https://api.replicate.com/v1/predictions", {
-    method: "POST",
-    headers: { ...cabecalho, prefer: "wait=50" },
-    body: JSON.stringify({ version, input: { image: dataUri } }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!r.ok) throw new Error(`Replicate: HTTP ${r.status} ${(await r.text()).slice(0, 160)}`);
+  // Contas com pouco crédito têm limite baixo (6 pedidos por minuto): no 429 espera o tempo que o Replicate pede e tenta de novo
+  let r: Response;
+  for (let tentativa = 0; ; tentativa++) {
+    r = await fetch("https://api.replicate.com/v1/predictions", {
+      method: "POST",
+      headers: { ...cabecalho, prefer: "wait=50" },
+      body: JSON.stringify({ version, input: { image: dataUri } }),
+      signal: AbortSignal.timeout(Math.max(5000, timeoutMs - (Date.now() - ini))),
+    });
+    if (r.status !== 429 || tentativa >= 2) break;
+    const espera = Number(((await r.json().catch(() => ({}))) as { retry_after?: number }).retry_after);
+    const ms = Math.min(15000, ((Number.isFinite(espera) ? espera : 8) + 1) * 1000);
+    if (Date.now() - ini + ms > timeoutMs - 15000) break;
+    await new Promise((ok) => setTimeout(ok, ms));
+  }
   let p = (await r.json()) as { status: string; output?: string | string[]; error?: string; urls?: { get?: string } };
   while ((p.status === "starting" || p.status === "processing") && p.urls?.get && Date.now() - ini < timeoutMs) {
     await new Promise((ok) => setTimeout(ok, 1500));
