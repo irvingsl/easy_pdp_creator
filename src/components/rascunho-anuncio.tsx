@@ -438,7 +438,8 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
               const com = calc.comissao;
               const informado = freteReal.trim() ? Number(freteReal.replace(",", ".")) : NaN;
               // o ML informa o frete que a conta paga (já com o desconto); o campo manual só serve para corrigir
-              const pago = Number.isFinite(informado) ? informado : calc.fretePago ?? null;
+              // frete R$ 0,00 devolvido pelo ML não é um custo real (a conta/medidas não foram calculadas): trata como desconhecido
+              const pago = Number.isFinite(informado) ? informado : calc.fretePago && calc.fretePago > 0 ? calc.fretePago : null;
               const liquido = (frete: number | null | undefined) => (com == null || frete == null ? "?" : reais(preco - com - frete));
               const pct = calc.descontoFrete ? Math.round(calc.descontoFrete.taxa * 100) : 0;
               const obrigatorio = calc.freteObrigatorio === true;
@@ -497,7 +498,14 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
                     </>
                   )}
                   {calc.freteObrigatorio == null && <p className="text-xs text-gray-500">Não consegui saber se o ML exige frete grátis neste preço; o ML decide ao publicar.</p>}
-                  {pago == null && <p className="text-xs text-gray-500">O ML não informou o frete desta conta. Digite o valor que o ML mostra para você:</p>}
+                  {pago == null && (
+                    <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                      {calc.fretePago === 0
+                        ? "O ML devolveu frete R$ 0,00 para esta conta e estas medidas, o que não parece o frete real, então não calculei a sobra com frete grátis."
+                        : "O ML não informou o frete desta conta, então não calculei a sobra com frete grátis."}{" "}
+                      Digite abaixo o frete que o ML mostra para você (vale para frete grátis por sua conta) e a conta é refeita na hora.
+                    </p>
+                  )}
                   <label className="flex flex-col gap-1 text-xs text-gray-500">
                     Frete diferente do calculado? Digite o que o ML mostra (R$)
                     <input className={inputBase} inputMode="decimal" placeholder="ex.: 19,05" value={freteReal} onChange={(e) => setFreteReal(e.target.value)} />
