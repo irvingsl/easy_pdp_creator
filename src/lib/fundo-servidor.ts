@@ -7,7 +7,20 @@ import sharp from "sharp";
  */
 export const fundoNoServidorAtivo = () => !!process.env.REPLICATE_API_TOKEN || !!process.env.FUNDO_URL;
 
+// dono/nome do modelo no Replicate (ex.: "men1scus/birefnet"); troque pela variável REPLICATE_MODELO, sem mexer no código
 const MODELO_REPLICATE = process.env.REPLICATE_MODELO ?? "851-labs/background-remover";
+let versaoEmCache: { modelo: string; id: string } | null = null;
+
+/** Modelos da comunidade só aceitam chamada pelo identificador da versão: busca a mais recente. */
+async function versaoDoModelo(cabecalho: Record<string, string>): Promise<string> {
+  if (versaoEmCache?.modelo === MODELO_REPLICATE) return versaoEmCache.id;
+  const r = await fetch(`https://api.replicate.com/v1/models/${MODELO_REPLICATE}`, { headers: cabecalho, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`Replicate: modelo ${MODELO_REPLICATE} não encontrado (HTTP ${r.status})`);
+  const id = ((await r.json()) as { latest_version?: { id?: string } }).latest_version?.id;
+  if (!id) throw new Error(`Replicate: o modelo ${MODELO_REPLICATE} não tem versão publicada`);
+  versaoEmCache = { modelo: MODELO_REPLICATE, id };
+  return id;
+}
 
 type Resultado = { jpeg: Blob; area: number };
 
@@ -16,10 +29,11 @@ async function viaReplicate(original: Blob, timeoutMs: number): Promise<Resultad
   const cabecalho = { authorization: `Bearer ${token}`, "content-type": "application/json" };
   const dataUri = `data:image/jpeg;base64,${Buffer.from(await original.arrayBuffer()).toString("base64")}`;
   const ini = Date.now();
-  let r = await fetch(`https://api.replicate.com/v1/models/${MODELO_REPLICATE}/predictions`, {
+  const version = await versaoDoModelo(cabecalho);
+  let r = await fetch("https://api.replicate.com/v1/predictions", {
     method: "POST",
     headers: { ...cabecalho, prefer: "wait=50" },
-    body: JSON.stringify({ input: { image: dataUri, format: "png" } }),
+    body: JSON.stringify({ version, input: { image: dataUri } }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) throw new Error(`Replicate: HTTP ${r.status} ${(await r.text()).slice(0, 160)}`);
