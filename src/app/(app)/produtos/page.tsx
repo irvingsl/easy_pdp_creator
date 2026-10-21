@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BUCKET_PROCESSADAS } from "@/domain/types";
+import { COR_BOLINHA, situacaoDoProduto } from "@/domain/situacao";
 import { BotaoTentarDeNovo, ESTADO, FilaPainel, rotuloDoEstado, type ItemFila } from "@/components/fila-painel";
 
 export default async function ProdutosPage() {
@@ -8,7 +9,7 @@ export default async function ProdutosPage() {
   const { data: auth } = await supabase.auth.getUser();
   const { data: produtos } = await supabase
     .from("produtos")
-    .select("id, sku, titulo_base, estoque, fila_etapa, fila_passo, fila_erro, produto_fotos(path_original, path_processada, status_processamento, id, ordem)")
+    .select("id, sku, titulo_base, estoque, rascunho, fila_etapa, fila_passo, fila_erro, anuncios(status, external_id), produto_fotos(path_original, path_processada, status_processamento, id, ordem)")
     .order("criado_em", { ascending: false })
     .limit(100);
 
@@ -33,16 +34,33 @@ export default async function ProdutosPage() {
   return (
     <>
       <FilaPainel itens={itens} userId={auth.user!.id} sensibilidade={Number.isFinite(sens) ? Math.min(100, Math.max(0, sens)) : 50} />
+      <p className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-green-500" />publicado</span>
+        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />precisa de você</span>
+        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-red-500" />erro ou sem estoque</span>
+        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />processando</span>
+      </p>
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {produtos.map((p) => {
           const foto = [...(p.produto_fotos ?? [])]
             .filter((f) => f.path_processada)
             .sort((a, b) => a.ordem - b.ordem)[0];
           const url = foto ? supabase.storage.from(BUCKET_PROCESSADAS).getPublicUrl(foto.path_processada!).data.publicUrl : null;
-          const estado = p.fila_etapa ? ESTADO[p.fila_etapa] : null;
+          const estado = p.fila_etapa && p.fila_etapa !== "revisar" ? ESTADO[p.fila_etapa] : null;
+          const rasc = p.rascunho as { titulo?: string; preco?: number | null } | null;
+          const sit = situacaoDoProduto({
+            fila_etapa: p.fila_etapa,
+            fila_erro: p.fila_erro,
+            estoque: p.estoque,
+            anuncios: p.anuncios ?? [],
+            fotos: p.produto_fotos ?? [],
+            tem_rascunho: !!rasc?.titulo,
+            preco: rasc?.preco ?? null,
+          });
           return (
             <li key={p.id}>
-              <Link href={`/produtos/${p.id}`} className="block overflow-hidden rounded-lg border border-gray-200 transition hover:border-indigo-500 hover:shadow dark:border-gray-800">
+              <Link href={`/produtos/${p.id}`} className="relative block overflow-hidden rounded-lg border border-gray-200 transition hover:border-indigo-500 hover:shadow dark:border-gray-800">
+                <span title={sit.titulo} aria-label={sit.titulo} className={`absolute right-2 top-2 z-10 h-4 w-4 rounded-full ring-2 ring-white dark:ring-gray-900 ${COR_BOLINHA[sit.cor]}`} />
                 {url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={url} alt={p.sku} className="aspect-square w-full object-cover" />

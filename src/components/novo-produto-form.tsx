@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
-import { saveOriginal } from "@/lib/photos";
+import { criarProdutoNaFila } from "@/lib/novo-produto";
 import { dispararFila } from "./fila-painel";
 import { btnPrimary, btnSecondary, inputBase } from "./ui";
 
@@ -35,7 +35,6 @@ export function NovoProdutoForm() {
     setError("");
     setNotice("");
     const supabase = createClient();
-    let produtoCriado: string | null = null;
     try {
       const { data: auth } = await supabase.auth.getUser();
       const userId = auth.user!.id;
@@ -53,47 +52,19 @@ export function NovoProdutoForm() {
       }
       if (!smalls.length) throw new Error("Nenhuma das fotos pôde ser aberta. Use JPG, PNG, WebP ou HEIC.");
 
-      const { data: produto, error: pErr } = await supabase
-        .from("produtos")
-        .insert({
-          oem_code: oem.trim() || null,
-          // o que o vendedor já sabe entra como fato confirmado e guia a identificação
-          dados_confirmados: {
-            ...(marca.trim() ? { marca: marca.trim() } : {}),
-            ...(oem.trim() ? { numero_peca: oem.trim() } : {}),
-            ...(veiculo.trim() ? { veiculo: veiculo.trim() } : {}),
-          },
-        })
-        .select("id")
-        .single();
-      if (pErr) throw pErr;
-
-      produtoCriado = produto.id;
       const quantidade = Math.max(0, Math.floor(Number(qtd) || 0));
-      if (quantidade > 0) await supabase.from("movimentacoes_estoque").insert({ produto_id: produto.id, delta: quantidade, motivo: "cadastro", origem: "manual" });
-      // Só salva os originais (rápido e em paralelo). O fundo é removido na página do produto, onde a identificação
-      // por IA, que usa as fotos originais, já pode rodar ao mesmo tempo.
       setProgress({ done: 0, total: smalls.length, step: "Enviando fotos" });
       let enviadas = 0;
-      await Promise.all(
-        smalls.map(async (small, i) => {
-          await saveOriginal(supabase, { userId, produtoId: produto.id, small, ordem: i });
-          enviadas += 1;
-          setProgress({ done: enviadas, total: smalls.length, step: "Enviando fotos" });
-        }),
-      );
-      // entra na fila: o servidor identifica e monta o rascunho sozinho, mesmo com o app fechado
-      await supabase.from("produtos").update({ fila_etapa: "identificar", fila_passo: null, fila_erro: null, fila_atualizado_em: new Date().toISOString() }).eq("id", produto.id);
+      // salva os originais, cria o produto e o põe na fila: o servidor identifica e monta o rascunho sozinho, mesmo com o app fechado
+      await criarProdutoNaFila(supabase, userId, smalls, { oem, marca, veiculo, quantidade }, () => {
+        enviadas += 1;
+        setProgress({ done: enviadas, total: smalls.length, step: "Enviando fotos" });
+      });
       await dispararFila(2);
       if (skipped.length) alert(`Não consegui abrir: ${skipped.join("; ")}`);
       router.push("/produtos");
       router.refresh();
     } catch (err) {
-      // Não deixa um produto vazio para trás se nenhuma foto chegou a ser salva
-      if (produtoCriado) {
-        const { count } = await supabase.from("produto_fotos").select("id", { count: "exact", head: true }).eq("produto_id", produtoCriado);
-        if (!count) await supabase.from("produtos").delete().eq("id", produtoCriado);
-      }
       setError(err instanceof Error ? err.message : "Erro inesperado");
       setProgress(null);
     }
