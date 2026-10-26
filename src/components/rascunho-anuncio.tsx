@@ -395,42 +395,6 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
                   </label>
                 ))}
             </div>
-            <button type="button" className={btnSecondary} disabled={busy} onClick={() => chamarML(false)}>Validar no Mercado Livre (não publica)</button>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={pausado} onChange={(e) => setPausado(e.target.checked)} />
-              Publicar pausado (recomendado no primeiro teste)
-            </label>
-            <button type="button" className={btnPrimary} disabled={busy} onClick={publicar}>Publicar no Mercado Livre</button>
-            {pub?.ok && (
-              <p className="rounded-lg bg-green-50 p-3 text-green-900 dark:bg-green-950 dark:text-green-200">
-                ✓ Criado: {pub.id} ({pub.status === "paused" ? "pausado" : pub.status}).{" "}
-                {pub.link && <a className="underline" href={pub.link} target="_blank" rel="noreferrer">Abrir no ML</a>}
-                {pub.fotosNoML === 0 ? " Atenção: o ML não registrou nenhuma foto." : ""}
-                {pub.avisoDescricao ? " Atenção: a descrição não foi enviada, edite no ML." : ""}
-              </p>
-            )}
-            {pub?.ok && pub.respostaCriacao !== undefined && <CopyBlock text={JSON.stringify(pub.respostaCriacao, null, 2)} label="Copiar resposta da criação (ML)" />}
-            {pub?.error && (
-              <div className="flex flex-col gap-2">
-                <p className="text-red-600">{pub.error}</p>
-                {pub.resposta !== undefined && <CopyBlock text={JSON.stringify(pub.resposta, null, 2)} label="Copiar resposta do ML" />}
-              </div>
-            )}
-            {ml?.error && <p className="text-red-600">{ml.error}</p>}
-            {ml?.status !== undefined && (
-              <div className="flex flex-col gap-2">
-                <p className={ml.aceito ? "text-green-700 dark:text-green-400" : "text-red-600"}>
-                  {ml.aceito ? (ml.avisos?.length ? "✓ O ML aceitou o anúncio, com avisos" : "✓ O ML aceitou o anúncio") : "✗ O ML reprovou o anúncio"}
-                </p>
-                {!!ml.erros?.length && <ul className="list-disc pl-5 text-red-600">{ml.erros.map((m, i) => <li key={i}>{m}</li>)}</ul>}
-                {!!ml.avisos?.length && <ul className="list-disc pl-5 text-xs text-amber-700 dark:text-amber-300">{ml.avisos.map((m, i) => <li key={i}>{m}</li>)}</ul>}
-                {ml.fotoPrincipalOk === false && <p className="text-xs text-amber-700 dark:text-amber-300">A foto principal está com o fundo original: o ML recomenda fundo branco (a publicação não é bloqueada).</p>}
-                {ml.obrigatorios?.some((o) => !o.enviado) && (
-                  <p className="text-xs text-amber-700 dark:text-amber-300">Obrigatórios ainda não preenchidos: {ml.obrigatorios.filter((o) => !o.enviado).map((o) => o.nome).join(", ")}</p>
-                )}
-                <CopyBlock text={`HTTP ${ml.status}\n${JSON.stringify(ml.resposta, null, 2)}\n\nDados enviados:\n${JSON.stringify(ml.payload, null, 2)}`} label="Copiar resposta e dados" />
-              </div>
-            )}
           </div>
 
           <div className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
@@ -521,7 +485,47 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
             })()}
           </div>
 
-          <button type="button" onClick={salvar} disabled={busy} className={btnPrimary}>Salvar rascunho</button>
+          <div className="flex flex-col gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={salvar} disabled={busy} className={btnSecondary}>Salvar rascunho</button>
+              <button type="button" className={btnSecondary} disabled={busy} onClick={() => chamarML(false)}>Validar no ML (não publica)</button>
+            </div>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={pausado} onChange={(e) => setPausado(e.target.checked)} />
+              Publicar pausado (recomendado no primeiro teste)
+            </label>
+            <button type="button" className={btnPrimary} disabled={busy} onClick={publicar}>Publicar no Mercado Livre</button>
+            {pub?.ok && (
+              <p className="rounded-lg bg-green-50 p-3 text-green-900 dark:bg-green-950 dark:text-green-200">
+                ✓ Criado: {pub.id} ({pub.status === "paused" ? "pausado" : pub.status}).{" "}
+                {pub.link && <a className="underline" href={pub.link} target="_blank" rel="noreferrer">Abrir no ML</a>}
+                {pub.fotosNoML === 0 ? " Atenção: o ML não registrou nenhuma foto." : ""}
+                {pub.avisoDescricao ? " Atenção: a descrição não foi enviada, edite no ML." : ""}
+              </p>
+            )}
+            {pub?.ok && pub.respostaCriacao !== undefined && <CopyBlock text={JSON.stringify(pub.respostaCriacao, null, 2)} label="Copiar resposta da criação (ML)" />}
+            {pub?.error && (
+              <div className="flex flex-col gap-2">
+                <p className="text-red-600">{pub.error}</p>
+                {pub.resposta !== undefined && <CopyBlock text={JSON.stringify(pub.resposta, null, 2)} label="Copiar resposta do ML" />}
+              </div>
+            )}
+            {ml?.error && <p className="text-red-600">{ml.error}</p>}
+            {ml?.status !== undefined && (
+              <div className="flex flex-col gap-2">
+                <p className={ml.aceito ? "text-green-700 dark:text-green-400" : "text-red-600"}>
+                  {ml.aceito ? (ml.avisos?.length ? "✓ O ML aceitou o anúncio, com avisos" : "✓ O ML aceitou o anúncio") : "✗ O ML reprovou o anúncio"}
+                </p>
+                {!!ml.erros?.length && <ul className="list-disc pl-5 text-red-600">{ml.erros.map((m, i) => <li key={i}>{m}</li>)}</ul>}
+                {!!ml.avisos?.length && <ul className="list-disc pl-5 text-xs text-amber-700 dark:text-amber-300">{ml.avisos.map((m, i) => <li key={i}>{m}</li>)}</ul>}
+                {ml.fotoPrincipalOk === false && <p className="text-xs text-amber-700 dark:text-amber-300">A foto principal está com o fundo original: o ML recomenda fundo branco (a publicação não é bloqueada).</p>}
+                {ml.obrigatorios?.some((o) => !o.enviado) && (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">Obrigatórios ainda não preenchidos: {ml.obrigatorios.filter((o) => !o.enviado).map((o) => o.nome).join(", ")}</p>
+                )}
+                <CopyBlock text={`HTTP ${ml.status}\n${JSON.stringify(ml.resposta, null, 2)}\n\nDados enviados:\n${JSON.stringify(ml.payload, null, 2)}`} label="Copiar resposta e dados" />
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
