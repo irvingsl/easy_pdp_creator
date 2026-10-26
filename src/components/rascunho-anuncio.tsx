@@ -112,7 +112,10 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
     const { error } = await createClient().from("produtos").update({ rascunho: r, titulo_base: r.titulo, descricao_base: r.descricao }).eq("id", produtoId);
     setBusy(false);
     setMsg(error ? error.message : "Salvo ✓");
-    if (!error) router.refresh();
+    if (!error) {
+      setPub(null);
+      router.refresh();
+    }
   }
 
   const [ml, setMl] = useState<{ categorias?: { id: string; nome: string; caminho: string }[]; status?: number; resposta?: unknown; aceito?: boolean; erros?: string[]; avisos?: string[]; fotoPrincipalOk?: boolean; obrigatorios?: { id: string; nome: string; enviado: boolean }[]; payload?: unknown; error?: string } | null>(null);
@@ -121,6 +124,7 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
     if (!r) return;
     setBusy(true);
     setMl(null);
+    setPub(null);
     try {
       // o servidor lê o rascunho salvo: salva antes de validar
       const { error } = await createClient().from("produtos").update({ rascunho: r, titulo_base: r.titulo, descricao_base: r.descricao }).eq("id", produtoId);
@@ -326,11 +330,11 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
           <div className="flex flex-col gap-2 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
             <span className="font-medium">Mercado Livre</span>
             <div className="flex gap-2">
-              <input className={inputBase} placeholder="Categoria (ex.: MLB194761)" value={r.categoria_id ?? ""} onChange={(e) => set("categoria_id", e.target.value.trim() || undefined)} />
+              <input className={inputBase} placeholder="Categoria (ex.: MLB194761)" value={r.categoria_id ?? ""} onChange={(e) => { set("categoria_id", e.target.value.trim() || undefined); setPub(null); }} />
               <button type="button" className={btnSecondary} disabled={busy} onClick={() => chamarML(true)}>Sugerir</button>
             </div>
             {ml?.categorias?.map((c) => (
-              <button key={c.id} type="button" className="text-left text-xs text-indigo-600 underline" onClick={() => { set("categoria_id", c.id); setMl(null); }}>
+              <button key={c.id} type="button" className="text-left text-xs text-indigo-600 underline" onClick={() => { set("categoria_id", c.id); setMl(null); setPub(null); }}>
                 {c.id} · {c.caminho}
               </button>
             ))}

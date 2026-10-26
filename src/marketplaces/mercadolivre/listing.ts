@@ -17,6 +17,13 @@ export async function sugerirCategorias(token: string, texto: string): Promise<C
   );
 }
 
+/** A categoria existe e é folha (só em categoria folha se anuncia). Categorias de catálogo/domínio podem não servir para anunciar. */
+export async function categoriaValida(token: string, id: string): Promise<boolean> {
+  const r = await mlGet(`/categories/${id}`, token);
+  if (!r.ok) return false;
+  return ((r.body as { children_categories?: unknown[] } | null)?.children_categories?.length ?? 0) === 0;
+}
+
 export type AtributoCategoria = { id: string; name: string; value_type?: string; tags?: Record<string, boolean>; values?: { id: string; name: string }[]; allowed_units?: { id: string; name: string }[]; default_unit?: string };
 
 export async function atributosDaCategoria(token: string, categoria: string): Promise<AtributoCategoria[]> {

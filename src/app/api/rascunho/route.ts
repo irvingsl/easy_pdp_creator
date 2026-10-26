@@ -5,6 +5,8 @@ import { fatosDoProduto, type Identificacao } from "@/lib/fatos";
 import type { DadosConfirmados } from "@/domain/dados-confirmados";
 import { gravarUso, usoStore } from "@/lib/uso";
 import { hashTexto } from "@/lib/hash";
+import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
+import { categoriaValida } from "@/marketplaces/mercadolivre/listing";
 import { TITULO_MAX, type Rascunho } from "@/domain/rascunho";
 
 export const maxDuration = 60;
@@ -34,6 +36,13 @@ async function tratar(request: NextRequest) {
   await gravarUso(supabase, produtoId, "rascunho", userId).catch(() => {});
   if (!r.rascunho) return NextResponse.json({ error: "A IA não devolveu um rascunho válido, tente de novo" }, { status: 502 });
 
+  // a categoria do produto de catálogo só vale se o ML a aceitar para anunciar (folha e existente)
+  const catCatalogo = (produto.identificacao as Identificacao | null)?.modeloCatalogo?.categoria ?? undefined;
+  let categoriaDoCatalogo: string | undefined;
+  if (!existente?.categoria_id && catCatalogo) {
+    const token = await getAccessToken(supabase, userId).catch(() => null);
+    if (token && (await categoriaValida(token, catCatalogo).catch(() => false))) categoriaDoCatalogo = catCatalogo;
+  }
   const x = r.rascunho as Partial<Rascunho>;
   const rascunho: Rascunho = {
     titulo: String(x.titulo ?? "").slice(0, TITULO_MAX),
@@ -46,7 +55,7 @@ async function tratar(request: NextRequest) {
     geradoEm: new Date().toISOString(),
     fatos_hash: hash,
     // a categoria do produto equivalente do catálogo é a melhor sugestão (mesma peça)
-    categoria_id: existente?.categoria_id ?? (produto.identificacao as Identificacao | null)?.modeloCatalogo?.categoria ?? undefined,
+    categoria_id: existente?.categoria_id ?? categoriaDoCatalogo,
   };
   await supabase.from("produtos").update({ rascunho }).eq("id", produtoId);
   return NextResponse.json({ rascunho });

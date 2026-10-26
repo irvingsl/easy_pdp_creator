@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { BUCKET_PROCESSADAS } from "@/domain/types";
 import type { Rascunho } from "@/domain/rascunho";
 import type { DadosConfirmados } from "@/domain/dados-confirmados";
-import { atributosDaCategoria, montarAnuncio, sugerirCategorias } from "./listing";
+import { atributosDaCategoria, categoriaValida, montarAnuncio, sugerirCategorias } from "./listing";
 
 /** Lê o rascunho salvo do produto e monta o corpo do anúncio do ML (usado pela validação e pela publicação). */
 export async function prepararAnuncio(supabase: SupabaseClient, token: string, produtoId: string, sugerir = false) {
@@ -15,6 +15,16 @@ export async function prepararAnuncio(supabase: SupabaseClient, token: string, p
   const r = produto.rascunho as Rascunho | null;
   if (!r?.titulo) return { erro: "gere e salve o rascunho primeiro", http: 400 } as const;
 
+  // categoria que o ML não aceita para anunciar (inexistente ou não folha, p.ex. a do produto de catálogo): troca pela sugerida e grava
+  if (!sugerir && r.categoria_id && !(await categoriaValida(token, r.categoria_id))) {
+    const categorias = await sugerirCategorias(token, r.titulo);
+    if (categorias.length) {
+      r.categoria_id = categorias[0].id;
+      await supabase.from("produtos").update({ rascunho: { ...r, ficha: undefined, ficha_hash: undefined } }).eq("id", produtoId);
+      r.ficha = undefined;
+      r.ficha_hash = undefined;
+    }
+  }
   if (sugerir || !r.categoria_id) {
     const categorias = await sugerirCategorias(token, r.titulo);
     if (sugerir || !categorias.length) return { categorias } as const;
