@@ -567,7 +567,7 @@ export async function preencherFicha(fatos: string, campos: unknown[], budget = 
 /** Converte descrições de veículos em marca, modelo e faixa de anos, com os nomes usados no catálogo de veículos do ML. */
 export async function normalizarVeiculos(linhas: string[], budget = BUDGET_MS) {
   const prompt = `Converta cada linha de compatibilidade de veículo em marca, modelo e faixa de anos, usando os nomes do catálogo brasileiro de veículos (marca como "Volkswagen", "Chevrolet", "Fiat"; modelo só o nome, como "Fusca", "Gol", "Brasília", "Kombi", "Variant", "Saveiro", "Karmann Ghia", "TL", "Uno").
-Regras: ignore cilindrada/motorização e texto entre parênteses; "VW" é "Volkswagen"; se a linha tiver faixa de anos, use ano_ini e ano_fim; se tiver um ano só, os dois iguais; se não houver ano, use null. Uma linha pode virar uma única entrada.
+Regras: ignore cilindrada/motorização e texto entre parênteses; "VW" é "Volkswagen"; se a linha tiver faixa de anos, use ano_ini e ano_fim; se tiver um ano só, os dois iguais; se não houver ano, use null. Faixa aberta ("1974 em diante", "a partir de 1974"): use como ano_fim o último ano em que esse modelo foi fabricado/vendido no Brasil, se você souber com segurança; se não souber, use null. Uma linha pode virar uma única entrada.
 Responda apenas com um bloco \`\`\`json: [{ "linha": number, "marca": string, "modelo": string, "ano_ini": number|null, "ano_fim": number|null }].
 
 LINHAS:

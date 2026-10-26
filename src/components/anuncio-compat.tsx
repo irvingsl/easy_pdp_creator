@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { enviarCompatibilidade } from "@/lib/compat-client";
 import { CopyBlock } from "./copy-block";
 import { btnPrimary, btnSecondary } from "./ui";
 
@@ -44,6 +45,19 @@ export function AnuncioCompat({ produtoId, itemId }: { produtoId: string; itemId
     }
   }
 
+  async function enviarTudo() {
+    setBusy(true);
+    setMsg("");
+    setPrevia(null);
+    try {
+      const r = await enviarCompatibilidade(produtoId, itemId);
+      setMsg(r.resumo);
+      setResp(r.resposta ?? null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function enviar() {
     if (!previa?.existentes.length) return;
     if (!window.confirm(`Enviar ${previa.existentes.length} combinações (marca/modelo/ano) de compatibilidade ao anúncio ${itemId}?`)) return;
@@ -62,9 +76,14 @@ export function AnuncioCompat({ produtoId, itemId }: { produtoId: string; itemId
     <div className="flex w-full flex-col gap-2 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
       <span className="font-medium">Compatibilidade de veículos</span>
       <p className="text-xs text-gray-500">Usa só os veículos que você confirmou no rascunho (salve o rascunho antes) e confere cada marca/modelo/ano no catálogo do ML.</p>
-      <button type="button" className={`${btnSecondary} self-start !px-3 !py-1.5`} disabled={busy} onClick={montar}>
-        {busy && !previa ? "Conferindo no catálogo…" : "Montar a partir da lista confirmada"}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={`${btnPrimary} !px-3 !py-1.5`} disabled={busy} onClick={enviarTudo}>
+          {busy && !previa ? "Enviando…" : "Enviar compatibilidade (tudo de uma vez)"}
+        </button>
+        <button type="button" className={`${btnSecondary} !px-3 !py-1.5`} disabled={busy} onClick={montar}>
+          Só conferir antes
+        </button>
+      </div>
       {previa && (
         <div className="flex flex-col gap-2">
           {previa.existentes.length > 0 && (

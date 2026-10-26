@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { GARANTIA_PADRAO, TITULO_MAX, type CampoFicha, type Rascunho } from "@/domain/rascunho";
+import { enviarCompatibilidade } from "@/lib/compat-client";
 import { CopyBlock } from "./copy-block";
 import { btnPrimary, btnSecondary, inputBase } from "./ui";
 
@@ -198,6 +199,7 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
     setR((p) => (p ? { ...p, ficha: (p.ficha ?? []).map((f) => (f.id === id ? { ...f, valor, valor_id: valorId, origem: "vendedor" } : f)) } : p));
 
   const [pausado, setPausado] = useState(true);
+  const [compatMsg, setCompatMsg] = useState("");
   const [pub, setPub] = useState<{ ok?: boolean; id?: string; link?: string | null; status?: string; error?: string; resposta?: unknown; avisoDescricao?: unknown; respostaCriacao?: unknown; fotosEnviadas?: number; fotosNoML?: number | null } | null>(null);
 
   async function publicar() {
@@ -206,13 +208,21 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
     if (!window.confirm(`Publicar "${r.titulo}" por R$ ${r.preco ?? "?"} no Mercado Livre, ${quando}?`)) return;
     setBusy(true);
     setPub(null);
+    setCompatMsg("");
     try {
       const { error } = await createClient().from("produtos").update({ rascunho: r, titulo_base: r.titulo, descricao_base: r.descricao }).eq("id", produtoId);
       if (error) return setPub({ error: error.message });
       const res = await fetch("/api/anuncios/publicar", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ produtoId, confirmar: true, pausado }) });
       const txt = await res.text();
       try {
-        setPub(JSON.parse(txt));
+        const j = JSON.parse(txt) as NonNullable<typeof pub>;
+        setPub(j);
+        // anúncio criado: já envia a lista de veículos confirmados (o ML marca "sem veículos" até receber)
+        if (j.ok && j.id) {
+          setCompatMsg("Enviando a compatibilidade de veículos…");
+          const c = await enviarCompatibilidade(produtoId, j.id).catch((e) => ({ ok: false, resumo: e instanceof Error ? e.message : "falhou" }));
+          setCompatMsg(c.resumo);
+        }
       } catch {
         setPub({ error: res.status === 504 ? "Demorou demais: confira no Mercado Livre se o anúncio foi criado antes de tentar de novo." : `Resposta inesperada (${res.status})` });
       }
@@ -289,7 +299,7 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
             <span className="font-medium">Compatibilidade ({r.compatibilidade.length})</span>
             {r.compatibilidade.some((c) => c.origem !== "confirmado") && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                <span>{r.compatibilidade.filter((c) => c.origem !== "confirmado").length} item(ns) sugerido(s) pela web, sem confirmação (a publicação fica bloqueada).</span>
+                <span>{r.compatibilidade.filter((c) => c.origem !== "confirmado").length} item(ns) sugerido(s) pela web, sem confirmação (não entram na compatibilidade enviada ao ML).</span>
                 <button type="button" className="underline" onClick={() => set("compatibilidade", r.compatibilidade.map((c) => ({ ...c, origem: "confirmado" })))}>
                   Confirmar todas
                 </button>
@@ -503,6 +513,7 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
                 {pub.avisoDescricao ? " Atenção: a descrição não foi enviada, edite no ML." : ""}
               </p>
             )}
+            {pub?.ok && compatMsg && <p className="text-xs text-gray-600 dark:text-gray-400">{compatMsg}</p>}
             {pub?.ok && pub.respostaCriacao !== undefined && <CopyBlock text={JSON.stringify(pub.respostaCriacao, null, 2)} label="Copiar resposta da criação (ML)" />}
             {pub?.error && (
               <div className="flex flex-col gap-2">
