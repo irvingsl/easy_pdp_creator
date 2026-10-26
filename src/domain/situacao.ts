@@ -19,12 +19,20 @@ type Entrada = {
  *  verde = publicado no Mercado Livre;  cinza = o servidor ainda está trabalhando.
  */
 export function situacaoDoProduto(p: Entrada): Situacao {
-  const publicado = p.anuncios.some((a) => a.external_id && a.status !== "deleted" && a.status !== "closed");
+  const vivos = p.anuncios.filter((a) => a.external_id && a.status !== "deleted" && a.status !== "closed");
+  const publicado = vivos.length > 0;
+  const ativo = vivos.some((a) => a.status === "active");
   if (p.fila_etapa === "erro") return { cor: "vermelho", titulo: "Deu erro no processamento" };
   if (publicado && p.estoque <= 0) return { cor: "vermelho", titulo: "Publicado, mas sem estoque" };
   if (p.fila_etapa === "identificar" || p.fila_etapa === "rascunho") return { cor: "cinza", titulo: "O servidor está processando" };
   if (p.fotos.some((f) => f.status_processamento === "erro")) return { cor: "amarelo", titulo: "Uma foto falhou: refaça o fundo ou use o original" };
-  if (publicado) return { cor: "verde", titulo: "Publicado no Mercado Livre" };
+  if (publicado) {
+    if (ativo) return { cor: "verde", titulo: "Publicado e ativo no Mercado Livre" };
+    const st = vivos[0].status;
+    if (st === "payment_required") return { cor: "vermelho", titulo: "O Mercado Livre pede um pagamento para ativar o anúncio" };
+    const motivo = st === "under_review" ? "em revisão pelo Mercado Livre" : st === "paused" ? "pausado" : st === "inactive" ? "inativo" : `com status "${st}"`;
+    return { cor: "amarelo", titulo: `Publicado, mas ${motivo}` };
+  }
   if (p.estoque <= 0) return { cor: "amarelo", titulo: "Informe o estoque" };
   if (p.fila_erro) return { cor: "amarelo", titulo: p.fila_erro };
   if (!p.tem_rascunho) return { cor: "amarelo", titulo: "Falta gerar o rascunho" };

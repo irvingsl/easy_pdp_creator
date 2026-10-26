@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BUCKET_PROCESSADAS } from "@/domain/types";
 import { COR_BOLINHA, situacaoDoProduto } from "@/domain/situacao";
+import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
+import { mlGet } from "@/marketplaces/mercadolivre/oauth";
 import { BotaoTentarDeNovo, ESTADO, FilaPainel, rotuloDoEstado, type ItemFila } from "@/components/fila-painel";
 
 export default async function ProdutosPage() {
@@ -19,6 +21,34 @@ export default async function ProdutosPage() {
         Nenhum produto ainda. <Link href="/produtos/novo" className="underline">Criar o primeiro</Link>.
       </p>
     );
+  }
+
+  // O status gravado pode estar velho (o ML cria pausado, depois revisa e ativa): confere o real de todos os publicados de uma vez
+  const publicados = produtos.flatMap((p) => (p.anuncios ?? []).filter((a) => a.external_id && a.status !== "deleted" && a.status !== "closed"));
+  if (publicados.length) {
+    try {
+      const token = await getAccessToken(supabase);
+      if (token) {
+        for (let i = 0; i < publicados.length; i += 20) {
+          const lote = publicados.slice(i, i + 20);
+          const r = await mlGet(`/items?ids=${lote.map((a) => a.external_id).join(",")}&attributes=id,status,sub_status`, token);
+          const lista = (Array.isArray(r.body) ? r.body : []) as { code?: number; body?: { id?: string; status?: string; sub_status?: string[] } }[];
+          for (const [k, it] of lista.entries()) {
+            const b = it.body;
+            const a = lote[k];
+            if (!a) continue;
+            const removido = it.code === 404 || (it.code === 200 && b?.status === "closed" && b.sub_status?.includes("deleted"));
+            const novo = removido ? "deleted" : it.code === 200 ? b?.status : undefined;
+            if (novo && novo !== a.status) {
+              await supabase.from("anuncios").update({ status: novo, ultimo_sync_em: new Date().toISOString() }).eq("external_id", a.external_id!);
+              a.status = novo;
+            }
+          }
+        }
+      }
+    } catch {
+      /* sem conexão com o ML: usa o status gravado */
+    }
   }
 
   const sens = Number(auth.user?.user_metadata?.limiar_fundo);
