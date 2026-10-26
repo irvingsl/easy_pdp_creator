@@ -45,7 +45,10 @@ export async function montarPrevia(supabase: SupabaseClient, token: string, prod
   const modelosPedidos = [...new Set([...todas.values()].map((f) => `${f.marca}|${f.modelo}`))];
   for (const chave of modelosPedidos) {
     const [marca, modelo] = chave.split("|");
-    const candidatos = [...new Set([modelo, semAcento(modelo), cap(modelo), cap(semAcento(modelo)), modelo.toUpperCase(), `${cap(modelo)} Tc`])];
+    const base = [modelo, semAcento(modelo), cap(modelo), cap(semAcento(modelo)), modelo.toUpperCase(), `${cap(modelo)} Tc`];
+    // variações de escrita do catálogo: "F-75" x "F75" x "F 75"; geração romana ("Corcel I", "Corcel II")
+    const extras = base.flatMap((m) => [m.replace(/-/g, ""), m.replace(/-/g, " "), `${m} I`, `${m} II`]);
+    const candidatos = [...new Set([...base, ...extras])];
     for (const c of candidatos) {
       const r = await mlPost("/catalog_compatibilities/products_search/count_family_products", token, { domain_id: DOMINIO, attributes: [{ id: "BRAND", value_name: marca }, { id: "MODEL", value_name: c }] });
       if (((r.body as { count?: number } | null)?.count ?? 0) > 0) {

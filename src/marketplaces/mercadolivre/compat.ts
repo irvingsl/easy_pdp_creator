@@ -3,6 +3,8 @@ import { mlGet, mlPost } from "./oauth";
 export const DOMINIO = "MLB-CARS_AND_VANS";
 /** O ML aceita no máximo 200 produtos (versões de veículos) por chamada; cada família (marca/modelo/ano) vale a quantidade de produtos dela. */
 export const MAX_PRODUTOS_POR_CHAMADA = 200;
+/** E no máximo 10 famílias por chamada (o ML responde "products_families: size must be between 0 and 10"). */
+export const MAX_FAMILIAS_POR_CHAMADA = 10;
 
 export type Familia = { marca: string; modelo: string; ano: number; count?: number };
 
@@ -44,7 +46,7 @@ export async function enviarFamilias(token: string, itemId: string, familias: Fa
   let atual: Familia[] = [];
   let soma = 0;
   for (const f of utilizaveis) {
-    if (atual.length && soma + (f.count ?? 0) > MAX_PRODUTOS_POR_CHAMADA) {
+    if (atual.length && (soma + (f.count ?? 0) > MAX_PRODUTOS_POR_CHAMADA || atual.length >= MAX_FAMILIAS_POR_CHAMADA)) {
       grupos.push(atual);
       atual = [];
       soma = 0;
@@ -54,11 +56,25 @@ export async function enviarFamilias(token: string, itemId: string, familias: Fa
   }
   if (atual.length) grupos.push(atual);
 
+  // Anúncios de "produto do usuário" (tag user_product_listing) recebem a compatibilidade pelo recurso do produto do usuário
+  const info = await mlGet(`/items/${itemId}?attributes=id,user_product_id,category_id`, token);
+  const ib = info.body as { user_product_id?: string | null; category_id?: string } | null;
+  const up = ib?.user_product_id ?? null;
+  const cat = ib?.category_id;
+
+  const postar = async (g: Familia[]) => {
+    const fams = g.map((f) => ({ domain_id: DOMINIO, creation_source: "DEFAULT", attributes: attrs(f) }));
+    if (!up) return mlPost(`/items/${itemId}/compatibilities`, token, { products_families: fams });
+    const r1 = await mlPost(`/user-products/${up}/compatibilities`, token, { domain_id: DOMINIO, category_id: cat, products_families: fams });
+    if (r1.ok || r1.status !== 400) return r1;
+    // o ML pede o domain_id "fora das listas": tenta de novo sem repeti-lo dentro de cada família
+    const r2 = await mlPost(`/user-products/${up}/compatibilities`, token, { domain_id: DOMINIO, category_id: cat, products_families: fams.map(({ domain_id: _d, ...resto }) => (void _d, resto)) });
+    return r2.ok ? r2 : r1;
+  };
+
   const out: ResultadoEnvio = { ok: true, criadas: 0, chamadas: [], grandesDemais };
   for (const g of grupos) {
-    const r = await mlPost(`/items/${itemId}/compatibilities`, token, {
-      products_families: g.map((f) => ({ domain_id: DOMINIO, creation_source: "DEFAULT", attributes: attrs(f) })),
-    });
+    const r = await postar(g);
     out.chamadas.push({ familias: g.length, produtos: g.reduce((s, f) => s + (f.count ?? 0), 0), status: r.status, corpo: r.body });
     if (!r.ok) {
       out.ok = false;
