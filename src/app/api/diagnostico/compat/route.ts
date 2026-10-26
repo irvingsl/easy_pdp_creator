@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessToken, getAccount } from "@/marketplaces/mercadolivre/accounts";
-import { mlGet } from "@/marketplaces/mercadolivre/oauth";
+import { mlGet, mlPost } from "@/marketplaces/mercadolivre/oauth";
 
 export const maxDuration = 30;
 
@@ -53,6 +53,25 @@ export async function GET(request: NextRequest) {
     const q = new URLSearchParams({ dimensions: `${n(e.altura)}x${n(e.largura)}x${n(e.comprimento)},${n(e.peso)}`, item_price: String(r.preco), listing_type_id: "gold_special", mode: "me2", condition: r.condicao ?? "new", verbose: "true" });
     await rodar("frete_calculadora", `/users/${conta.external_user_id}/shipping_options/free?${q}`);
     testes.embalagem_usada = e;
+  }
+
+  // Teste de ESCRITA (só com ?teste=Marca|Modelo|AnoIni|AnoFim): tenta associar essa família ao anúncio e relê o resultado
+  const teste = request.nextUrl.searchParams.get("teste");
+  if (teste) {
+    const [marca, modelo, ini, fim] = teste.split("|");
+    const anos: number[] = [];
+    for (let a = Number(ini); a <= Number(fim || ini) && anos.length < 60; a++) anos.push(a);
+    const attrs = (ano: number) => [{ id: "BRAND", value_name: marca }, { id: "MODEL", value_name: modelo }, { id: "VEHICLE_YEAR", value_name: String(ano) }];
+    const contagens: Record<string, unknown> = {};
+    for (const ano of anos) {
+      const c = await mlPost("/catalog_compatibilities/products_search/count_family_products", token, { domain_id: "MLB-CARS_AND_VANS", attributes: attrs(ano) });
+      contagens[String(ano)] = { status: c.status, corpo: corta(c.body, 400) };
+    }
+    testes.teste_contagens = contagens;
+    const envio = await mlPost(`/items/${item}/compatibilities`, token, { products_families: anos.map((a) => ({ domain_id: "MLB-CARS_AND_VANS", attributes: attrs(a) })) });
+    testes.teste_envio = { status: envio.status, corpo: corta(envio.body) };
+    await rodar("depois_compatibilidades", `/items/${item}/compatibilities`);
+    await rodar("depois_item", `/items/${item}?attributes=id,tags,status`);
   }
 
   const dados = { sku, item, testes };
