@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images/compress";
 import { agruparPorHorario, criarProdutoNaFila } from "@/lib/novo-produto";
@@ -20,18 +20,66 @@ export function NovoLoteForm() {
   const [progresso, setProgresso] = useState("");
   const [error, setError] = useState("");
 
-  const urls = useMemo(() => new Map(files.map((f) => [f, URL.createObjectURL(f)])), [files]);
-  useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
+  const [aviso, setAviso] = useState("");
+  const [lendo, setLendo] = useState(false);
 
-  function escolher(list: FileList | null) {
+  // Miniaturas pequenas (200 px), geradas uma de cada vez: abrir 14 fotos de 12 MP ao mesmo tempo estoura a memória do celular
+  const [thumbs, setThumbs] = useState<Map<File, string>>(new Map());
+  const feitas = useRef(new Set<File>()); // fotos que já tiveram miniatura (ou falharam)
+  const urlsCriadas = useRef<string[]>([]);
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      for (const f of files) {
+        if (cancelado) return;
+        if (feitas.current.has(f)) continue;
+        feitas.current.add(f);
+        try {
+          const bmp = await createImageBitmap(f, { resizeWidth: 200, resizeQuality: "low", imageOrientation: "from-image" });
+          const c = document.createElement("canvas");
+          c.width = bmp.width;
+          c.height = bmp.height;
+          c.getContext("2d")!.drawImage(bmp, 0, 0);
+          bmp.close();
+          const url = await new Promise<string>((ok, no) => c.toBlob((b) => (b ? ok(URL.createObjectURL(b)) : no(new Error("miniatura"))), "image/jpeg", 0.7));
+          urlsCriadas.current.push(url);
+          setThumbs((m) => new Map(m).set(f, url));
+        } catch {
+          setThumbs((m) => new Map(m).set(f, ""));
+        }
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [files]);
+  useEffect(() => {
+    const urls = urlsCriadas.current;
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, []);
+
+  /** Lê cada foto para a memória logo ao escolher: arquivos da galeria do Android podem ficar ilegíveis depois. */
+  async function escolher(list: FileList | null) {
     if (!list?.length) return;
-    const todas = [...files, ...Array.from(list)];
-    setFiles(todas);
-    setGrupos(agruparPorHorario(todas, Number(quantos) || null));
+    const novas = Array.from(list);
+    setLendo(true);
+    try {
+      const lidas: File[] = [];
+      for (const f of novas) lidas.push(new File([await f.arrayBuffer()], f.name, { type: f.type || "image/jpeg", lastModified: f.lastModified }));
+      const todas = [...files, ...lidas];
+      setFiles(todas);
+      const r = agruparPorHorario(todas, Number(quantos) || null);
+      setGrupos(r.grupos);
+      setAviso(r.aviso ?? "");
+    } finally {
+      setLendo(false);
+    }
   }
 
   function separar() {
-    setGrupos(agruparPorHorario(files, Number(quantos) || null));
+    const r = agruparPorHorario(files, Number(quantos) || null);
+    setGrupos(r.grupos);
+    setAviso(r.aviso ?? "");
   }
 
   /** Move uma foto para outro produto ("novo" cria um produto; "remover" tira a foto). */
@@ -58,7 +106,10 @@ export function NovoLoteForm() {
         const smalls: Blob[] = [];
         for (const f of grupo) {
           try {
-            smalls.push(await compressImage(f));
+            smalls.push(await compressImage(f).catch(async () => {
+              await new Promise((ok) => setTimeout(ok, 400)); // uma segunda tentativa, com a memória já liberada
+              return compressImage(f);
+            }));
           } catch (e) {
             erros.push(e instanceof Error ? e.message : f.name);
           }
@@ -87,15 +138,15 @@ export function NovoLoteForm() {
     }
   }
 
-  const busy = !!progresso;
+  const busy = !!progresso || lendo;
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-gray-500">
         Escolha todas as fotos de uma vez (de vários produtos). O app separa pelo horário em que foram tiradas; você confere e ajusta antes de criar.
       </p>
       <label className={`${btnSecondary} ${busy ? "pointer-events-none opacity-50" : ""}`}>
-        🖼️ Escolher fotos da galeria
-        <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { escolher(e.target.files); e.target.value = ""; }} />
+        {lendo ? "Lendo as fotos…" : "🖼️ Escolher fotos da galeria"}
+        <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { const l = e.target.files; void escolher(l); e.target.value = ""; }} />
       </label>
 
       {files.length > 0 && (
@@ -110,7 +161,8 @@ export function NovoLoteForm() {
               <input value={qtd} onChange={(e) => setQtd(e.target.value.replace(/\D/g, ""))} inputMode="numeric" disabled={busy} className={inputBase} />
             </label>
           </div>
-          <button type="button" onClick={separar} disabled={busy} className={btnSecondary}>Separar de novo por horário</button>
+          <button type="button" onClick={separar} disabled={busy} className={btnSecondary}>Separar de novo (use depois de mudar “quantos produtos”)</button>
+          {aviso && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">{aviso}</p>}
 
           <ul className="flex flex-col gap-3">
             {grupos.map((g, gi) => (
@@ -120,7 +172,7 @@ export function NovoLoteForm() {
                   {g.map((f) => (
                     <li key={`${f.name}-${f.lastModified}-${f.size}`} className="flex flex-col gap-1">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={urls.get(f)} alt="" className="aspect-square w-full rounded-lg object-cover" />
+                      {thumbs.get(f) ? <img src={thumbs.get(f)} alt="" className="aspect-square w-full rounded-lg object-cover" /> : <div className="aspect-square w-full rounded-lg bg-gray-200 dark:bg-gray-800" />}
                       <span className="text-center text-[10px] text-gray-500">{hora(f)}</span>
                       <select disabled={busy} value="" onChange={(e) => e.target.value && mover(gi, f, e.target.value)} className="rounded border border-gray-300 bg-white p-1 text-xs dark:border-gray-700 dark:bg-gray-900">
                         <option value="">Mover…</option>
