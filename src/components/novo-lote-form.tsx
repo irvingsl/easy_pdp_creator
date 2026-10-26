@@ -126,16 +126,17 @@ export function NovoLoteForm() {
       if (criados) await dispararFila(2);
       if (erros.length) alert(`${criados} produto(s) criado(s). Problemas: ${erros.join("; ")}`);
       if (criados) {
+        setProgresso("Pronto! Abrindo a lista…"); // mantém o botão desativado até a página mudar
         router.push("/produtos");
         router.refresh();
+        return;
       } else {
         setError(erros.join("; ") || "Nenhum produto foi criado.");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro inesperado");
-    } finally {
-      setProgresso("");
     }
+    setProgresso("");
   }
 
   const busy = !!progresso || lendo;

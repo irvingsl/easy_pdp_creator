@@ -58,7 +58,8 @@ export default async function ProdutosPage() {
     etapa: p.fila_etapa,
     passo: p.fila_passo,
     erro: p.fila_erro,
-    pendentes: (p.produto_fotos ?? []).filter((f) => f.status_processamento === "pendente").map((f) => ({ fotoId: f.id, pathOriginal: f.path_original, produtoId: p.id })),
+    // fotos pendentes de produtos que o servidor ainda está processando ficam por conta dele (o fundo é o último passo da fila)
+    pendentes: p.fila_etapa === "identificar" || p.fila_etapa === "rascunho" ? [] : (p.produto_fotos ?? []).filter((f) => f.status_processamento === "pendente").map((f) => ({ fotoId: f.id, pathOriginal: f.path_original, produtoId: p.id })),
   }));
 
   return (
