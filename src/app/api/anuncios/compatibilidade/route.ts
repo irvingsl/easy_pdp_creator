@@ -1,26 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { normalizarVeiculos } from "@/lib/gemini";
-import { gravarUso, usoStore } from "@/lib/uso";
+import { usoStore } from "@/lib/uso";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
-import { mlPost } from "@/marketplaces/mercadolivre/oauth";
+import { montarPrevia } from "@/marketplaces/mercadolivre/compat-previa";
 import { compatibilidadesDoItem, enviarFamilias, type Familia as FamiliaML } from "@/marketplaces/mercadolivre/compat";
-import type { Rascunho } from "@/domain/rascunho";
 
 export const maxDuration = 60;
 
-const DOMINIO = "MLB-CARS_AND_VANS";
 const MAX_FAMILIAS = 400;
 
 type Familia = { marca: string; modelo: string; ano: number };
 
 export const POST = (request: NextRequest) => usoStore.run([], () => tratar(request));
-
-const attrs = (f: Familia) => [
-  { id: "BRAND", value_name: f.marca },
-  { id: "MODEL", value_name: f.modelo },
-  { id: "VEHICLE_YEAR", value_name: String(f.ano) },
-];
 
 /**
  * Compatibilidade de veículos do anúncio (domínio MLB-CARS_AND_VANS; atributos BRAND, MODEL e VEHICLE_YEAR).
@@ -38,61 +29,9 @@ async function tratar(request: NextRequest) {
 
   try {
     if (acao === "previa") {
-      const { data: produto } = await supabase.from("produtos").select("rascunho").eq("id", produtoId).maybeSingle();
-      const r = produto?.rascunho as Rascunho | null;
-      const linhas = (r?.compatibilidade ?? []).filter((c) => c.origem === "confirmado").map((c) => `${c.veiculo}${c.anos ? ` ${c.anos}` : ""}`);
-      if (!linhas.length) return NextResponse.json({ error: "confirme ao menos um veículo na lista de compatibilidade do rascunho (e salve o rascunho)" }, { status: 400 });
-      const norm = await normalizarVeiculos(linhas);
-      await gravarUso(supabase, produtoId, "compatibilidade").catch(() => {});
-      if (!norm) return NextResponse.json({ error: "A IA não conseguiu interpretar a lista, tente de novo" }, { status: 502 });
-
-      // combinações marca/modelo/ano (sem repetir); linhas sem ano ficam de fora e são avisadas
-      const sem: string[] = [];
-      const todas = new Map<string, Familia>();
-      for (const n of norm) {
-        if (!n.marca || !n.modelo) continue;
-        if (n.ano_ini == null || n.ano_fim == null) {
-          sem.push(`${n.marca} ${n.modelo}`);
-          continue;
-        }
-        for (let a = Math.min(n.ano_ini, n.ano_fim); a <= Math.max(n.ano_ini, n.ano_fim) && a - Math.min(n.ano_ini, n.ano_fim) < 60; a++) {
-          todas.set(`${n.marca}|${n.modelo}|${a}`, { marca: n.marca, modelo: n.modelo, ano: a });
-        }
-      }
-      // O catálogo escreve o modelo à sua maneira ("Tl", "Karmann Ghia Tc"...): para cada modelo, descobre uma grafia que exista
-      const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const cap = (t: string) => t.toLowerCase().replace(/(^|\s|-)\S/g, (c) => c.toUpperCase());
-      const grafias = new Map<string, string>();
-      const modelosPedidos = [...new Set([...todas.values()].map((f) => `${f.marca}|${f.modelo}`))];
-      for (const chave of modelosPedidos) {
-        const [marca, modelo] = chave.split("|");
-        const candidatos = [...new Set([modelo, semAcento(modelo), cap(modelo), cap(semAcento(modelo)), modelo.toUpperCase(), `${cap(modelo)} Tc`])];
-        for (const c of candidatos) {
-          const r = await mlPost("/catalog_compatibilities/products_search/count_family_products", token, { domain_id: DOMINIO, attributes: [{ id: "BRAND", value_name: marca }, { id: "MODEL", value_name: c }] });
-          if (((r.body as { count?: number } | null)?.count ?? 0) > 0) {
-            grafias.set(`${marca}|${modelo}`, c);
-            break;
-          }
-        }
-      }
-      const modelosNaoEncontrados = modelosPedidos.filter((k) => !grafias.has(k)).map((k) => k.replace("|", " "));
-      const lista = [...todas.values()]
-        .filter((f) => grafias.has(`${f.marca}|${f.modelo}`))
-        .map((f) => ({ ...f, modelo: grafias.get(`${f.marca}|${f.modelo}`)! }))
-        .slice(0, MAX_FAMILIAS);
-      // confere no catálogo (em lotes, para respeitar o tempo)
-      const existentes: (Familia & { count: number })[] = [];
-      const ausentes: Familia[] = [];
-      for (let i = 0; i < lista.length; i += 20) {
-        const lote = lista.slice(i, i + 20);
-        const res = await Promise.all(lote.map((f) => mlPost("/catalog_compatibilities/products_search/count_family_products", token, { domain_id: DOMINIO, attributes: attrs(f) })));
-        res.forEach((x, j) => {
-          const count = (x.body as { count?: number } | null)?.count ?? 0;
-          if (count > 0) existentes.push({ ...lote[j], count });
-          else ausentes.push(lote[j]);
-        });
-      }
-      return NextResponse.json({ existentes, ausentes, semAno: sem, modelosNaoEncontrados, truncado: todas.size > MAX_FAMILIAS });
+      const p = await montarPrevia(supabase, token, produtoId);
+      if ("error" in p) return NextResponse.json({ error: p.error }, { status: p.http });
+      return NextResponse.json(p);
     }
 
     // enviar
