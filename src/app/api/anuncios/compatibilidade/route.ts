@@ -4,13 +4,13 @@ import { normalizarVeiculos } from "@/lib/gemini";
 import { gravarUso, usoStore } from "@/lib/uso";
 import { getAccessToken } from "@/marketplaces/mercadolivre/accounts";
 import { mlPost } from "@/marketplaces/mercadolivre/oauth";
+import { compatibilidadesDoItem, enviarFamilias, type Familia as FamiliaML } from "@/marketplaces/mercadolivre/compat";
 import type { Rascunho } from "@/domain/rascunho";
 
 export const maxDuration = 60;
 
 const DOMINIO = "MLB-CARS_AND_VANS";
 const MAX_FAMILIAS = 400;
-const LOTE_ENVIO = 50;
 
 type Familia = { marca: string; modelo: string; ano: number };
 
@@ -81,12 +81,16 @@ async function tratar(request: NextRequest) {
         .map((f) => ({ ...f, modelo: grafias.get(`${f.marca}|${f.modelo}`)! }))
         .slice(0, MAX_FAMILIAS);
       // confere no catálogo (em lotes, para respeitar o tempo)
-      const existentes: Familia[] = [];
+      const existentes: (Familia & { count: number })[] = [];
       const ausentes: Familia[] = [];
       for (let i = 0; i < lista.length; i += 20) {
         const lote = lista.slice(i, i + 20);
         const res = await Promise.all(lote.map((f) => mlPost("/catalog_compatibilities/products_search/count_family_products", token, { domain_id: DOMINIO, attributes: attrs(f) })));
-        res.forEach((x, j) => ((x.body as { count?: number } | null)?.count ?? 0) > 0 ? existentes.push(lote[j]) : ausentes.push(lote[j]));
+        res.forEach((x, j) => {
+          const count = (x.body as { count?: number } | null)?.count ?? 0;
+          if (count > 0) existentes.push({ ...lote[j], count });
+          else ausentes.push(lote[j]);
+        });
       }
       return NextResponse.json({ existentes, ausentes, semAno: sem, modelosNaoEncontrados, truncado: todas.size > MAX_FAMILIAS });
     }
@@ -95,17 +99,9 @@ async function tratar(request: NextRequest) {
     if (!itemId || !/^MLB\d+$/.test(itemId) || !familias?.length) return NextResponse.json({ error: "anúncio e combinações obrigatórios" }, { status: 400 });
     const { data: anuncio } = await supabase.from("anuncios").select("id").eq("produto_id", produtoId).eq("external_id", itemId).maybeSingle();
     if (!anuncio) return NextResponse.json({ error: "anúncio não encontrado neste produto" }, { status: 404 });
-    // em lotes: se um lote for recusado, o app para e mostra a resposta do ML
-    const todas = familias.slice(0, MAX_FAMILIAS).map((f) => ({ domain_id: DOMINIO, attributes: attrs(f) }));
-    let enviadas = 0;
-    let ultima: { ok: boolean; status: number; body: unknown } = { ok: true, status: 200, body: null };
-    for (let i = 0; i < todas.length; i += LOTE_ENVIO) {
-      const lote = todas.slice(i, i + LOTE_ENVIO);
-      ultima = await mlPost(`/items/${itemId}/compatibilities`, token, { products_families: lote });
-      if (!ultima.ok) break;
-      enviadas += lote.length;
-    }
-    return NextResponse.json({ ok: ultima.ok, status: ultima.status, resposta: ultima.body, enviadas });
+    const envio = await enviarFamilias(token, itemId, familias.slice(0, MAX_FAMILIAS) as FamiliaML[]);
+    const depois = await compatibilidadesDoItem(token, itemId).catch(() => null);
+    return NextResponse.json({ ok: envio.ok, status: envio.erro?.status ?? 200, resposta: envio.erro?.corpo ?? envio.chamadas, enviadas: envio.criadas, grandesDemais: envio.grandesDemais, noML: depois });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "falha" }, { status: 500 });
   }

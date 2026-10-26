@@ -25,11 +25,14 @@ export async function enviarCompatibilidade(produtoId: string, itemId: string): 
   if (!existentes.length) return { ok: false, resumo: `Nada para enviar${avisos.length ? ": " + avisos.join("; ") : ""}.` };
   const e = await chamar(produtoId, { acao: "enviar", itemId, familias: existentes });
   const ok = e.ok === true;
+  const grandes = (e.grandesDemais as Familia[] | undefined) ?? [];
+  if (grandes.length) avisos.push(`${grandes.length} combinação(ões) com mais de 200 versões no catálogo (precisam de filtro por versão/motor no Gerenciador de Compatibilidades do ML): ${[...new Set(grandes.map((g) => `${g.marca} ${g.modelo}`))].join(", ")}`);
+  const noML = e.noML as { entradas?: number } | null | undefined;
   return {
     ok,
     resposta: e.resposta ?? e,
     resumo: ok
-      ? `✓ Compatibilidade enviada (${e.enviadas} combinações).${avisos.length ? " Ficou de fora: " + avisos.join("; ") + "." : ""}`
-      : `O ML recusou a compatibilidade (HTTP ${e.status ?? "?"}).`,
+      ? `✓ O ML criou ${e.enviadas} compatibilidades${noML ? ` (agora o anúncio mostra ${noML.entradas} entrada(s) de compatibilidade)` : ""}.${avisos.length ? " Ficou de fora: " + avisos.join("; ") + "." : ""}`
+      : `O ML recusou a compatibilidade (HTTP ${e.status ?? "?"}): ${JSON.stringify(e.resposta).slice(0, 300)}`,
   };
 }
