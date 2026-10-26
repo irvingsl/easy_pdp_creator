@@ -52,7 +52,8 @@ export function NovoProdutoForm() {
       }
       if (!smalls.length) throw new Error("Nenhuma das fotos pôde ser aberta. Use JPG, PNG, WebP ou HEIC.");
 
-      const quantidade = Math.max(0, Math.floor(Number(qtd) || 0));
+      // quem está cadastrando tem ao menos 1 em mãos: vazio ou 0 vira 1
+      const quantidade = Math.max(1, Math.floor(Number(qtd) || 0));
       setProgress({ done: 0, total: smalls.length, step: "Enviando fotos" });
       let enviadas = 0;
       // salva os originais, cria o produto e o põe na fila: o servidor identifica e monta o rascunho sozinho, mesmo com o app fechado
@@ -139,7 +140,7 @@ export function NovoProdutoForm() {
             <input value={marca} onChange={(e) => setMarca(e.target.value)} disabled={busy} className={inputBase} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            Quantidade em estoque
+            Quantidade em estoque (vazio = 1)
             <input value={qtd} onChange={(e) => setQtd(e.target.value.replace(/\D/g, ""))} inputMode="numeric" disabled={busy} className={inputBase} />
           </label>
         </div>

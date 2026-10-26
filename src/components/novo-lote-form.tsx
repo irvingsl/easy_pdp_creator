@@ -51,7 +51,8 @@ export function NovoLoteForm() {
     try {
       const { data: auth } = await supabase.auth.getUser();
       const userId = auth.user!.id;
-      const quantidade = Math.max(0, Math.floor(Number(qtd) || 0));
+      // quem está cadastrando tem ao menos 1 em mãos: vazio ou 0 vira 1
+      const quantidade = Math.max(1, Math.floor(Number(qtd) || 0));
       for (const [i, grupo] of grupos.entries()) {
         setProgresso(`Produto ${i + 1} de ${grupos.length}: reduzindo as fotos…`);
         const smalls: Blob[] = [];
@@ -105,7 +106,7 @@ export function NovoLoteForm() {
               <input value={quantos} onChange={(e) => setQuantos(e.target.value.replace(/\D/g, ""))} inputMode="numeric" disabled={busy} className={inputBase} />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              Estoque de cada um
+              Estoque de cada um (vazio = 1)
               <input value={qtd} onChange={(e) => setQtd(e.target.value.replace(/\D/g, ""))} inputMode="numeric" disabled={busy} className={inputBase} />
             </label>
           </div>
