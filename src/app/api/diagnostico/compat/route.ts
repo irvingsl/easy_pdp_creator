@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   const conta = await getAccount(supabase);
   if (!token || !conta) return NextResponse.json({ error: "conta do ML não conectada" }, { status: 400 });
 
-  const { data: p } = await supabase.from("produtos").select("id, anuncios(external_id, status)").eq("sku", sku).maybeSingle();
+  const { data: p } = await supabase.from("produtos").select("id, rascunho, anuncios(external_id, status)").eq("sku", sku).maybeSingle();
   const item = (p?.anuncios ?? []).find((a) => a.external_id && a.status !== "deleted")?.external_id;
   if (!item) return NextResponse.json({ error: "produto sem anúncio publicado" }, { status: 404 });
 
@@ -44,6 +44,16 @@ export async function GET(request: NextRequest) {
   await rodar("sugestoes_b", `/items/${item}/suggested_compatibilities`);
   await rodar("pendentes", `/users/${conta.external_user_id}/items/search?tags=pending_compatibilities&limit=50`);
   await rodar("incompletos", `/users/${conta.external_user_id}/items/search?tags=incomplete_compatibilities&limit=50`);
+
+  // o frete que a calculadora pede ao ML (o ML mostra "a pagar" diferente do que a calculadora devolveu)
+  const r = p?.rascunho as { preco?: number; condicao?: string; embalagem?: { altura: string; largura: string; comprimento: string; peso: string } } | null;
+  const e = r?.embalagem;
+  if (e?.altura && e.largura && e.comprimento && e.peso && r?.preco) {
+    const n = (v: string) => v.replace(",", ".").trim();
+    const q = new URLSearchParams({ dimensions: `${n(e.altura)}x${n(e.largura)}x${n(e.comprimento)},${n(e.peso)}`, item_price: String(r.preco), listing_type_id: "gold_special", mode: "me2", condition: r.condicao ?? "new", verbose: "true" });
+    await rodar("frete_calculadora", `/users/${conta.external_user_id}/shipping_options/free?${q}`);
+    testes.embalagem_usada = e;
+  }
 
   const dados = { sku, item, testes };
   await supabase.from("diagnosticos").insert({ tipo: "compat", dados });
