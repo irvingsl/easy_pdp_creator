@@ -161,6 +161,37 @@ export async function executarPasso(admin: SupabaseClient, userId: string, p: It
   }
 }
 
+const INTERVALO_REPLICATE_MS = 11_000; // contas com pouco crédito: 6 pedidos por minuto, somando todos os produtos
+const ESPERA_MAXIMA_MS = 25_000;
+
+const lerVaga = async (admin: SupabaseClient) => {
+  const { data } = await admin.from("fila_config").select("valor").eq("chave", "fundo_vaga").maybeSingle();
+  return (data?.valor as string | undefined) ?? null;
+};
+
+/** Reserva a próxima vaga global para chamar o Replicate (uma a cada 11 s, juntando todos os produtos em andamento). Devolve o instante da vaga, ou null se a fila de vagas está longa demais. */
+async function reservarVaga(admin: SupabaseClient): Promise<number | null> {
+  for (let i = 0; i < 6; i++) {
+    const antigo = await lerVaga(admin);
+    const vaga = Math.max(Date.now(), Number(antigo ?? 0) + INTERVALO_REPLICATE_MS);
+    if (vaga - Date.now() > ESPERA_MAXIMA_MS) return null;
+    if (antigo == null) {
+      const { error } = await admin.from("fila_config").insert({ chave: "fundo_vaga", valor: String(vaga) });
+      if (!error) return vaga;
+    } else {
+      const { data } = await admin.from("fila_config").update({ valor: String(vaga) }).eq("chave", "fundo_vaga").eq("valor", antigo).select("chave");
+      if (data?.length) return vaga;
+    }
+  }
+  return null;
+}
+
+/** O Replicate recusou por excesso de pedidos: empurra a próxima vaga para frente, para todos os produtos. */
+const recuarVagas = (admin: SupabaseClient) =>
+  admin.from("fila_config").upsert({ chave: "fundo_vaga", valor: String(Date.now() + 20_000) });
+
+const dormir = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
 /** Remove o fundo de UMA foto pendente do produto no servidor; quando não sobra nenhuma, o produto vai para revisão. */
 async function passoFundo(admin: SupabaseClient, userId: string, produtoId: string, salvar: (c: Record<string, unknown>) => unknown) {
   const concluir = (erro: string | null) => salvar({ fila_etapa: "revisar", fila_passo: null, ...(erro ? { fila_erro: erro } : {}) });
@@ -179,6 +210,14 @@ async function passoFundo(admin: SupabaseClient, userId: string, produtoId: stri
 
   const { data: usuario } = await admin.auth.admin.getUserById(userId);
   const sens = Number(usuario.user?.user_metadata?.limiar_fundo);
+  // espera a vez de chamar o Replicate; se há fila longa de vagas, tenta de novo daqui a pouco sem consumir tentativa
+  const vaga = await reservarVaga(admin);
+  if (vaga == null) {
+    await dormir(5000);
+    await salvar({ fila_passo: "fundo" });
+    return;
+  }
+  await dormir(Math.max(0, vaga - Date.now()));
   try {
     const { data: original, error } = await admin.storage.from(BUCKET_ORIGINAIS).download(foto.path_original);
     if (error || !original) throw new Error(error?.message ?? "original não encontrado");
@@ -188,10 +227,19 @@ async function passoFundo(admin: SupabaseClient, userId: string, produtoId: stri
     if (up.error) throw up.error;
     // recorte que sobrou quase vazio costuma ser erro do modelo: marca para o vendedor decidir (manter original)
     await admin.from("produto_fotos").update({ path_processada: path, status_processamento: "ok", manter_original: false }).eq("id", foto.id);
-    // espaça os pedidos: contas com pouco crédito no Replicate aceitam 6 por minuto
-    await new Promise((ok) => setTimeout(ok, 8000));
     await salvar({ fila_passo: "fundo", fila_erro: area < 0.03 ? "Uma foto ficou quase vazia depois do recorte: confira e, se preciso, use o original." : null });
   } catch (e) {
+    const msg = e instanceof Error ? e.message : "falha";
+    if (/429/.test(msg)) {
+      // excesso de pedidos: não é erro da foto. Recua para todos e tenta de novo (até 6 vezes seguidas)
+      await recuarVagas(admin);
+      const { data: atual } = await admin.from("produtos").select("fila_tentativas").eq("id", produtoId).maybeSingle();
+      const n = ((atual?.fila_tentativas as number | undefined) ?? 0) + 1;
+      if (n < 6) {
+        await admin.from("produtos").update({ fila_lease: null, fila_atualizado_em: new Date().toISOString(), fila_tentativas: n, fila_erro: `Replicate pediu para esperar (tentativa ${n})` }).eq("id", produtoId).eq("user_id", userId);
+        return;
+      }
+    }
     // não derruba o produto: a foto fica com erro e o vendedor pode refazer na página dele
     await admin.from("produto_fotos").update({ status_processamento: "erro" }).eq("id", foto.id);
     await salvar({ fila_passo: "fundo", fila_erro: `Fundo de uma foto não removido no servidor: ${e instanceof Error ? e.message : "falha"}` });
