@@ -25,6 +25,10 @@ export async function enviarCompatibilidade(produtoId: string, itemId: string): 
   if (!existentes.length) return { ok: false, resumo: `Nada para enviar${avisos.length ? ": " + avisos.join("; ") : ""}.` };
   const e = await chamar(produtoId, { acao: "enviar", itemId, familias: existentes });
   const ok = e.ok === true;
+  // categorias sem compatibilidade de veículos (ex.: juntas de carburador de alguns domínios): o ML recusa, e não é preciso enviar
+  if (!ok && /does not have active compatibilities/i.test(JSON.stringify(e.resposta ?? ""))) {
+    return { ok: true, resumo: "Esta categoria do Mercado Livre não usa compatibilidade de veículos (o ML não a aceita aqui), então não há o que enviar. Os veículos continuam na descrição do anúncio.", resposta: e.resposta };
+  }
   const grandes = (e.grandesDemais as Familia[] | undefined) ?? [];
   if (grandes.length) avisos.push(`${grandes.length} combinação(ões) com mais de 200 versões no catálogo (precisam de filtro por versão/motor no Gerenciador de Compatibilidades do ML): ${[...new Set(grandes.map((g) => `${g.marca} ${g.modelo}`))].join(", ")}`);
   const noML = e.noML as { entradas?: number } | null | undefined;

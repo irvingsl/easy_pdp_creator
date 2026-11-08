@@ -311,7 +311,12 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
             {r.compatibilidade.map((c, i) => (
               <div key={i} className="flex items-center gap-2">
                 <span className="flex flex-1 flex-wrap items-center gap-2">
-                  <span>{c.veiculo}</span>
+                  <input
+                    className="min-w-0 flex-1 basis-40 rounded border border-gray-300 bg-transparent px-2 py-1 text-xs dark:border-gray-700"
+                    placeholder="Marca e modelo (ex.: Fiat Uno)"
+                    value={c.veiculo}
+                    onChange={(e) => set("compatibilidade", r.compatibilidade.map((x, j) => (j === i ? { ...x, veiculo: e.target.value, origem: "confirmado" } : x)))}
+                  />
                   <input
                     className="w-32 rounded border border-gray-300 bg-transparent px-2 py-1 text-xs dark:border-gray-700"
                     placeholder="anos (ex.: 1973 a 1986)"
@@ -330,6 +335,9 @@ export function RascunhoAnuncio({ produtoId, inicial, estoque, autoStart = false
                 </button>
               </div>
             ))}
+            <button type="button" className="self-start text-xs text-indigo-600 underline" onClick={() => set("compatibilidade", [...r.compatibilidade, { veiculo: "", anos: null, origem: "confirmado" }])}>
+              + adicionar veículo
+            </button>
           </div>
 
           <label className="flex flex-col gap-1 text-sm">
